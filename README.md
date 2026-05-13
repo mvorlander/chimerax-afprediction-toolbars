@@ -122,6 +122,18 @@ On Windows, the full executable path is often similar to:
 
 ### 2. Install this bundle
 
+No-terminal option:
+
+- On macOS, double-click `install.command`.
+- On Windows, double-click `install_windows.bat`.
+- More detailed click-by-click instructions are in `INSTALL_NO_TERMINAL.md`.
+
+The double-click installers still use Python internally, but users do not need
+to type Python commands. They keep the installer window open so any error
+message can be read or sent to someone helping with installation.
+
+Command-line option:
+
 From this folder:
 
 ```bash

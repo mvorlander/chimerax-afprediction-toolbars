@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Added double-click macOS and Windows installers for users who do not want to
+  use the command line.
+- Added no-terminal installation instructions.
+
 ## 1.3.0
 
 - Added per-chain-pair inter-chain PAE controls in the AF model/PAE controller.
