@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.3.1
 
+- Added GitHub release wheel installation as the recommended non-developer path.
 - Added double-click macOS and Windows installers for users who do not want to
   use the command line.
 - Added no-terminal installation instructions.

@@ -48,11 +48,27 @@ the chain by the average AlphaMissense score, and closes the temporary score set
 
 ## Installation
 
-These instructions assume you have ChimeraX installed. The installer is plain
-Python and works on macOS, Windows, and Linux as long as it can find the
-ChimeraX executable.
+These instructions assume you have ChimeraX installed. For most users, install
+the released `.whl` file. The source installers are mainly for developers or
+users testing changes before a release.
 
-### 0. Get the source
+### Recommended: install the `.whl` release
+
+1. Download the latest `.whl` file from:
+   https://github.com/mvorlander/chimerax-afprediction-toolbars/releases/latest
+2. Start ChimeraX.
+3. In the ChimeraX command line, install the downloaded wheel:
+
+```text
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.1-py3-none-any.whl
+```
+
+4. Restart ChimeraX.
+
+Detailed wheel instructions, including Windows path examples, are in
+`INSTALL_WHEEL.md`.
+
+### Source install: get the source
 
 From GitHub:
 
@@ -65,7 +81,7 @@ If you received a ZIP archive instead, extract it and open a terminal in the
 folder that contains `bundle_info.xml`, `src/`, and
 `install_chimerax_bundle.py`.
 
-### 1. Uninstall older AF toolbar bundles
+### Uninstall older AF toolbar bundles
 
 If you previously installed one of the older AF toolbar bundles, uninstall it
 first to avoid duplicate `AF` toolbar buttons. In the ChimeraX command line,
@@ -120,7 +136,7 @@ On Windows, the full executable path is often similar to:
 & "C:\Program Files\ChimeraX\bin\ChimeraX.exe" --nogui --exit --cmd "toolshed uninstall AFToolbar forceRemove true ; toolshed uninstall AF3Toolbar forceRemove true ; exit"
 ```
 
-### 2. Install this bundle
+### Install from source
 
 No-terminal option:
 
@@ -174,7 +190,7 @@ To run the source-level smoke test before installing:
 python3 tests/smoke_test_discovery.py
 ```
 
-### 3. Confirm the install
+### Confirm the install
 
 Restart ChimeraX and check the toolbar. The `AF` tab should contain:
 
