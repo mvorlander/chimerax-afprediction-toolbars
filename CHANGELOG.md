@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Clarified that users should choose only one installation option: release wheel
+  or source install.
 - Reordered the README installation section to make the release wheel the
   preferred GitHub-facing installation route, with source install documented as
   an alternative.

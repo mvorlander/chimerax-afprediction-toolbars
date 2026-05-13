@@ -50,7 +50,15 @@ the chain by the average AlphaMissense score, and closes the temporary score set
 
 These instructions assume you already have ChimeraX installed.
 
-### Recommended: install the release wheel
+Choose one installation option only:
+
+- **Option A, recommended:** install the release wheel.
+- **Option B, alternative:** install from source with `git clone` and Python.
+
+Do not run both options for the same install. Use Option B only if you want to
+test unreleased changes, modify the bundle, or build the wheel yourself.
+
+### Option A: install the release wheel
 
 This is the preferred installation method for most users. It does not require
 Git, a source checkout, or running Python yourself.
@@ -176,9 +184,10 @@ toolshed uninstall AFPredictionToolbars forceRemove true
 
 Then restart ChimeraX.
 
-### Alternative: install from source
+### Option B: install from source
 
-Use this only if you want to test unreleased changes, modify the bundle, or build
+This is an alternative to Option A, not an extra step after installing the wheel.
+Use it only if you want to test unreleased changes, modify the bundle, or build
 the wheel yourself.
 
 Clone the repository:
