@@ -275,3 +275,32 @@ filter, contact-chain choice, and opened model/data pairs.
 
 The `Contact chain` field is optional. If left blank, the first chain detected in
 each opened structure is used.
+
+## Quickstart
+
+Use one install method only.
+
+Recommended wheel install:
+
+1. Download the latest `.whl` from:
+   https://github.com/mvorlander/chimerax-afprediction-toolbars/releases/latest
+2. Open ChimeraX.
+3. Run this in the ChimeraX command line, replacing the path with your downloaded
+   wheel:
+
+```text
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.1-py3-none-any.whl
+```
+
+4. Restart ChimeraX.
+5. Open the `AF` toolbar tab.
+
+Alternative source install:
+
+```bash
+git clone https://github.com/mvorlander/chimerax-afprediction-toolbars.git
+cd chimerax-afprediction-toolbars
+python3 install_chimerax_bundle.py
+```
+
+Restart ChimeraX after installing from source.

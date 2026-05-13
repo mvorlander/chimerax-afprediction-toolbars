@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added a bottom-of-README Quickstart section with concise wheel and source
+  install instructions.
 - Clarified that users should choose only one installation option: release wheel
   or source install.
 - Reordered the README installation section to make the release wheel the
