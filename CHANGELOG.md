@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Moved the README Quickstart section to the top of the document.
 - Added a bottom-of-README Quickstart section with concise wheel and source
   install instructions.
 - Clarified that users should choose only one installation option: release wheel
