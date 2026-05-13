@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Reordered the README installation section to make the release wheel the
+  preferred GitHub-facing installation route, with source install documented as
+  an alternative.
+
 ## 1.3.1
 
 - Added GitHub release wheel installation as the recommended non-developer path.

@@ -48,40 +48,40 @@ the chain by the average AlphaMissense score, and closes the temporary score set
 
 ## Installation
 
-These instructions assume you have ChimeraX installed. For most users, install
-the released `.whl` file. The source installers are mainly for developers or
-users testing changes before a release.
+These instructions assume you already have ChimeraX installed.
 
-### Recommended: install the `.whl` release
+### Recommended: install the release wheel
 
-1. Download the latest `.whl` file from:
+This is the preferred installation method for most users. It does not require
+Git, a source checkout, or running Python yourself.
+
+1. Download the latest `.whl` file from the GitHub release page:
    https://github.com/mvorlander/chimerax-afprediction-toolbars/releases/latest
 2. Start ChimeraX.
-3. In the ChimeraX command line, install the downloaded wheel:
+3. In the ChimeraX command line, run `toolshed install` followed by the path to
+   the downloaded wheel:
 
 ```text
 toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.1-py3-none-any.whl
 ```
 
-4. Restart ChimeraX.
+On Windows this looks like:
 
-Detailed wheel instructions, including Windows path examples, are in
-`INSTALL_WHEEL.md`.
-
-### Source install: get the source
-
-From GitHub:
-
-```bash
-git clone https://github.com/mvorlander/chimerax-afprediction-toolbars.git
-cd chimerax-afprediction-toolbars
+```text
+toolshed install C:\Users\yourname\Downloads\ChimeraX_AFPredictionToolbars-1.3.1-py3-none-any.whl
 ```
 
-If you received a ZIP archive instead, extract it and open a terminal in the
-folder that contains `bundle_info.xml`, `src/`, and
-`install_chimerax_bundle.py`.
+On macOS this looks like:
 
-### Uninstall older AF toolbar bundles
+```text
+toolshed install /Users/yourname/Downloads/ChimeraX_AFPredictionToolbars-1.3.1-py3-none-any.whl
+```
+
+4. Restart ChimeraX.
+
+More detailed wheel instructions are in `INSTALL_WHEEL.md`.
+
+### If you have an older AF toolbar bundle
 
 If you previously installed one of the older AF toolbar bundles, uninstall it
 first to avoid duplicate `AF` toolbar buttons. In the ChimeraX command line,
@@ -130,66 +130,6 @@ for example on macOS:
 /Applications/ChimeraX.app/Contents/MacOS/ChimeraX --nogui --exit --cmd "toolshed uninstall AFToolbar forceRemove true ; toolshed uninstall AF3Toolbar forceRemove true ; exit"
 ```
 
-On Windows, the full executable path is often similar to:
-
-```powershell
-& "C:\Program Files\ChimeraX\bin\ChimeraX.exe" --nogui --exit --cmd "toolshed uninstall AFToolbar forceRemove true ; toolshed uninstall AF3Toolbar forceRemove true ; exit"
-```
-
-### Install from source
-
-No-terminal option:
-
-- On macOS, double-click `install.command`.
-- On Windows, double-click `install_windows.bat`.
-- More detailed click-by-click instructions are in `INSTALL_NO_TERMINAL.md`.
-
-The double-click installers still use Python internally, but users do not need
-to type Python commands. They keep the installer window open so any error
-message can be read or sent to someone helping with installation.
-
-Command-line option:
-
-From this folder:
-
-```bash
-python3 install_chimerax_bundle.py
-```
-
-If ChimeraX is not auto-detected:
-
-```bash
-python3 install_chimerax_bundle.py --chimerax "/path/to/ChimeraX"
-```
-
-Examples:
-
-```bash
-python3 install_chimerax_bundle.py --chimerax "/Applications/ChimeraX.app/Contents/MacOS/ChimeraX"
-```
-
-```powershell
-py install_chimerax_bundle.py --chimerax "C:\Program Files\ChimeraX\bin\ChimeraX.exe"
-```
-
-You can also set `CHIMERAX_BIN` to the ChimeraX executable.
-
-The installer auto-detects ChimeraX on macOS, Windows, and Linux, removes stale
-local build artifacts, builds a wheel, and installs it with ChimeraX's
-`devel install` command.
-
-To check what would be run without changing anything:
-
-```bash
-python3 install_chimerax_bundle.py --dry-run
-```
-
-To run the source-level smoke test before installing:
-
-```bash
-python3 tests/smoke_test_discovery.py
-```
-
 ### Confirm the install
 
 Restart ChimeraX and check the toolbar. The `AF` tab should contain:
@@ -216,21 +156,17 @@ AFPredictionToolbars
 
 ### Upgrade
 
-To upgrade this bundle after pulling or receiving new source files, run:
+Download the newer release `.whl`, then install it in ChimeraX with `reinstall
+true`:
 
-```bash
-git pull
-python3 install_chimerax_bundle.py
+```text
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.1-py3-none-any.whl reinstall true
 ```
 
-Restart ChimeraX after the installer completes. You do not need to uninstall
-`AFPredictionToolbars` before an upgrade because the installer rebuilds and
-reinstalls the bundle.
+Restart ChimeraX after upgrading. ChimeraX only loads bundle Python code at
+startup.
 
-If ChimeraX was already open while you upgraded, quit and reopen it before
-testing the toolbar. ChimeraX only loads bundle Python code at startup.
-
-### Full Removal
+### Full removal
 
 To remove this bundle from ChimeraX:
 
@@ -239,6 +175,46 @@ toolshed uninstall AFPredictionToolbars forceRemove true
 ```
 
 Then restart ChimeraX.
+
+### Alternative: install from source
+
+Use this only if you want to test unreleased changes, modify the bundle, or build
+the wheel yourself.
+
+Clone the repository:
+
+```bash
+git clone https://github.com/mvorlander/chimerax-afprediction-toolbars.git
+cd chimerax-afprediction-toolbars
+```
+
+Then install from the source checkout:
+
+```bash
+python3 install_chimerax_bundle.py
+```
+
+If ChimeraX is not auto-detected:
+
+```bash
+python3 install_chimerax_bundle.py --chimerax "/path/to/ChimeraX"
+```
+
+The source installer auto-detects ChimeraX on macOS, Windows, and Linux, removes
+stale local build artifacts, builds a wheel, and installs it with ChimeraX's
+`devel install` command.
+
+Double-click source installer fallback:
+
+- On macOS, double-click `install.command`.
+- On Windows, double-click `install_windows.bat`.
+- More detailed click-by-click instructions are in `INSTALL_NO_TERMINAL.md`.
+
+To run the source-level smoke test before installing:
+
+```bash
+python3 tests/smoke_test_discovery.py
+```
 
 ## Expected Input
 
