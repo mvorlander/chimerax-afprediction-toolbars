@@ -1,0 +1,73 @@
+<BundleInfo name="ChimeraX-AFPredictionToolbars"
+    version="1.3.0"
+    package="af3_toolbar"
+    minSessionVersion="1"
+    maxSessionVersion="1">
+
+  <Author>Matthias Vorlaender</Author>
+  <Email>matthias.vorlaender@vbc.ac.at</Email>
+  <URL>https://github.com/mvorlander/chimerax-afprediction-toolbars</URL>
+
+  <Synopsis>Toolbar buttons for AF2/AF3 inspection and AlphaMissense mapping</Synopsis>
+  <Description>
+Adds an AF toolbar tab with buttons for inspecting AF2 top-hit/all-hit
+outputs, AF3 top-hit/all-hit prediction folders, and AlphaMissense mapping
+onto one selected protein chain. The bundle contains the workflow logic
+directly in Python and does not depend on external .cxc scripts.
+  </Description>
+
+  <Categories>
+    <Category name="General"/>
+  </Categories>
+
+  <Dependencies>
+    <Dependency name="ChimeraX-Core" version="~=1.1"/>
+  </Dependencies>
+
+  <Classifiers>
+    <PythonClassifier>Development Status :: 4 - Beta</PythonClassifier>
+    <ChimeraXClassifier>ChimeraX :: Tool :: AF Prediction Launcher :: General :: Inspect AF2 and AF3 prediction outputs and map AlphaMissense scores</ChimeraXClassifier>
+  </Classifiers>
+
+  <Providers manager="toolbar">
+    <Provider
+      tab="AF"
+      section="AF3"
+      name="af3-all"
+      display_name="All Hits"
+      icon="af3-multi.svg"
+      description="Choose an AF3 prediction folder and open all detected model/data pairs"/>
+    <Provider
+      tab="AF"
+      section="AF3"
+      name="af3-top"
+      display_name="Top Hit"
+      icon="af3-single.svg"
+      description="Choose an AF3 prediction folder and open the best detected model/data pair"/>
+    <Provider
+      tab="AF"
+      section="AF2"
+      name="af2-all"
+      display_name="All Hits"
+      icon="af2-multi.svg"
+      description="Choose an AF2 prediction folder and open all detected ranked hits"/>
+    <Provider
+      tab="AF"
+      section="AF2"
+      name="af2-top"
+      display_name="Top Hit"
+      icon="af2-rank1.svg"
+      description="Choose an AF2 prediction folder and open the best detected ranked hit"/>
+    <Provider
+      tab="AF"
+      section="Annotate"
+      name="missense-map"
+      display_name="Missense"
+      icon="missense.svg"
+      description="Map AlphaMissense scores from a human UniProt entry onto one selected chain"/>
+  </Providers>
+
+  <DataFiles>
+    <DataDir>icons</DataDir>
+  </DataFiles>
+</BundleInfo>
