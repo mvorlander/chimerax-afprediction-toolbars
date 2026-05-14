@@ -1,0 +1,90 @@
+name: Monthly ChimeraX compatibility check
+
+on:
+  schedule:
+    - cron: "17 7 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    name: Check ChimeraX compatibility
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Discover latest ChimeraX production release
+        id: chimerax
+        run: |
+          python tools/check_chimerax_release.py \
+            --known-file .github/chimerax_compatibility.json \
+            --github-output
+
+      - name: Run source compatibility smoke tests
+        run: |
+          python -m py_compile src/tool.py src/workflow.py install_chimerax_bundle.py tests/smoke_test_discovery.py
+          python tests/smoke_test_discovery.py
+
+      - name: Report current status
+        run: |
+          echo "Latest ChimeraX production release: ${{ steps.chimerax.outputs.current_version }}"
+          echo "Last tested ChimeraX production release: ${{ steps.chimerax.outputs.known_version }}"
+          echo "New release detected: ${{ steps.chimerax.outputs.new_release }}"
+
+      - name: Open compatibility issue for new ChimeraX releases
+        if: steps.chimerax.outputs.new_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_VERSION: ${{ steps.chimerax.outputs.current_version }}
+          KNOWN_VERSION: ${{ steps.chimerax.outputs.known_version }}
+          SOURCE_URL: ${{ steps.chimerax.outputs.source_url }}
+          RELEASE_SUMMARY: ${{ steps.chimerax.outputs.release_summary }}
+        run: |
+          title="Validate AFPredictionToolbars with ChimeraX ${CURRENT_VERSION}"
+          existing="$(gh issue list --state open --search "${title} in:title" --json number --jq '.[0].number // ""')"
+          if [ -n "$existing" ]; then
+            echo "Compatibility issue already exists: #${existing}"
+            exit 0
+          fi
+
+          gh label create compatibility \
+            --description "Compatibility checks with external software releases" \
+            --color "0E8A16" \
+            --force
+
+          cat > issue.md <<EOF
+          A new ChimeraX production release was detected by the monthly compatibility check.
+
+          - Latest production release: ${CURRENT_VERSION}
+          - Last version marked as tested: ${KNOWN_VERSION}
+          - Source: ${SOURCE_URL}
+          - Release text: ${RELEASE_SUMMARY}
+
+          Automated checks completed:
+          - Python syntax check
+          - AF2/AF3 folder-discovery smoke test
+
+          Manual validation checklist:
+          - Install the latest release wheel in ChimeraX ${CURRENT_VERSION}
+          - Confirm the AF toolbar appears
+          - Run AF3 Top Hit and AF3 All Hits on example data
+          - Run AF2 Top Hit and AF2 All Hits on example data
+          - Confirm the synchronized model/PAE slider still works
+          - Confirm AlphaMissense mapping still works on one selected chain
+          - Update .github/chimerax_compatibility.json after validation
+          EOF
+
+          gh issue create \
+            --title "$title" \
+            --label "compatibility" \
+            --body-file issue.md

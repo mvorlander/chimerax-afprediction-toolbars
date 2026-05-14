@@ -304,3 +304,18 @@ filter, contact-chain choice, and opened model/data pairs.
 
 The `Contact chain` field is optional. If left blank, the first chain detected in
 each opened structure is used.
+
+## Compatibility Automation
+
+The repository has a monthly GitHub Actions workflow that checks the official
+ChimeraX pages for a newer production release. On each run it:
+
+- detects the latest ChimeraX production version,
+- compares it with `.github/chimerax_compatibility.json`,
+- runs the bundle syntax check and AF2/AF3 discovery smoke test,
+- opens a GitHub issue when a newer ChimeraX production release needs manual
+  validation.
+
+After validating a new ChimeraX release, update
+`.github/chimerax_compatibility.json` so future monthly checks know that version
+has been tested.

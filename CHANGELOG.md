@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added a monthly GitHub Actions compatibility check for new ChimeraX production
+  releases.
 - Moved the README Quickstart section to the top of the document.
 - Added a bottom-of-README Quickstart section with concise wheel and source
   install instructions.
