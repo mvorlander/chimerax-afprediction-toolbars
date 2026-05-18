@@ -305,14 +305,14 @@ class AFDisplayController(ToolInstance):
         self._show_all.stateChanged.connect(self._apply_visibility)
         layout.addWidget(self._show_all)
 
-        pae_filter_row = QHBoxLayout()
-        layout.addLayout(pae_filter_row)
+        pae_cutoff_row = QHBoxLayout()
+        layout.addLayout(pae_cutoff_row)
         cutoff_label = QLabel("Inter-chain PAE cutoff", parent)
         cutoff_label.setToolTip(
             "Live-highlight residues whose best PAE to the selected partner "
             "chain(s) is below this value. Smaller values are more stringent."
         )
-        pae_filter_row.addWidget(cutoff_label)
+        pae_cutoff_row.addWidget(cutoff_label)
         self._pae_threshold_slider = QSlider(Qt.Horizontal, parent)
         self._pae_threshold_slider.setMinimum(0)
         self._pae_threshold_slider.setMaximum(30)
@@ -322,10 +322,13 @@ class AFDisplayController(ToolInstance):
         self._pae_threshold_slider.setTickPosition(QSlider.TicksBelow)
         self._pae_threshold_slider.setValue(20)
         self._pae_threshold_slider.valueChanged.connect(self._pae_threshold_changed)
-        pae_filter_row.addWidget(self._pae_threshold_slider, 1)
+        pae_cutoff_row.addWidget(self._pae_threshold_slider, 1)
         self._pae_threshold_value_label = QLabel("20", parent)
         self._pae_threshold_value_label.setMinimumWidth(24)
-        pae_filter_row.addWidget(self._pae_threshold_value_label)
+        pae_cutoff_row.addWidget(self._pae_threshold_value_label)
+
+        pae_action_row = QHBoxLayout()
+        layout.addLayout(pae_action_row)
         self._live_pae_highlight = QCheckBox("Live PAE highlight", parent)
         self._live_pae_highlight.setChecked(True)
         self._live_pae_highlight.setToolTip(
@@ -333,16 +336,13 @@ class AFDisplayController(ToolInstance):
             "residues and overlays their rows/columns in the PAE plot."
         )
         self._live_pae_highlight.stateChanged.connect(self._live_pae_highlight_changed)
-        pae_filter_row.addWidget(self._live_pae_highlight)
-        select_pae_button = QPushButton("Select Highlighted", parent)
-        select_pae_button.clicked.connect(self._select_low_pae_residues)
-        pae_filter_row.addWidget(select_pae_button)
+        pae_action_row.addWidget(self._live_pae_highlight, 1)
         show_only_pae_button = QPushButton("Show Only", parent)
         show_only_pae_button.clicked.connect(self._show_only_low_pae_residues)
-        pae_filter_row.addWidget(show_only_pae_button)
+        pae_action_row.addWidget(show_only_pae_button)
         show_all_pae_button = QPushButton("Show All", parent)
         show_all_pae_button.clicked.connect(self._show_all_current_model)
-        pae_filter_row.addWidget(show_all_pae_button)
+        pae_action_row.addWidget(show_all_pae_button)
 
         save_row = QHBoxLayout()
         layout.addLayout(save_row)
@@ -626,9 +626,6 @@ class AFDisplayController(ToolInstance):
         )
         self._preview_count = len(residues) if live else None
         self._update_status_strip()
-
-    def _select_low_pae_residues(self):
-        self._apply_interchain_pae_visibility("select")
 
     def _show_only_low_pae_residues(self):
         self._apply_interchain_pae_visibility("show_only")

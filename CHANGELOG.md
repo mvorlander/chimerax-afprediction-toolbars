@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.5
+
+- Rearranged inter-chain PAE controls so the cutoff slider has its own row.
+- Removed `Select Highlighted` because live highlighting already selects
+  matching residues by default.
+
 ## 1.3.4
 
 - Added a `Live PAE highlight` toggle to turn live structure selection and PAE
