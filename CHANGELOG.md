@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.3
+
+- Replaced the inter-chain PAE cutoff text box with a live slider.
+- Added live structure selection and PAE plot overlays for residues below the
+  current inter-chain PAE cutoff.
+- Renamed `Reset Display` to `Reset Active Run` and made it restore contact
+  side chains as part of the initial display.
+- Added a compact active-run status strip with current model, cutoff, chain-pair
+  filter, highlighted residue count, and last action.
+- Show missing-confidence badges when AF3 all-hit ranking metadata is incomplete.
+- Restore side-chain display for residues involved in AlphaFold contact
+  pseudobonds.
+
 ## 1.3.2
 
 - Add a `Reset Display` button that restores the active prediction run to its

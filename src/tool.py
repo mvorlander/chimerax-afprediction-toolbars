@@ -234,6 +234,8 @@ class AFDisplayController(ToolInstance):
         self._current_pair_index = 0
         self._deleted = False
         self._chain_pair_values = []
+        self._last_action = "Ready."
+        self._preview_count = None
 
         self.tool_window = tw = MainToolWindow(self)
         parent = tw.ui_area
@@ -258,9 +260,20 @@ class AFDisplayController(ToolInstance):
         self._pair_menu.currentIndexChanged.connect(self._set_pair_index)
         layout.addWidget(self._pair_menu)
 
-        layout.addWidget(QLabel("Inter-chain pair", parent))
+        chain_pair_label = QLabel("PAE chain-pair filter", parent)
+        chain_pair_label.setToolTip(
+            "Choose which chain pair is used by the inter-chain PAE cutoff. "
+            "All pairs means a residue is highlighted if it has a confident "
+            "PAE contact to any other chain."
+        )
+        layout.addWidget(chain_pair_label)
         self._chain_pair_menu = QComboBox(parent)
         self._chain_pair_menu.addItem("All inter-chain pairs")
+        self._chain_pair_menu.setToolTip(
+            "Filters the inter-chain PAE cutoff tool. It does not change which "
+            "model is displayed."
+        )
+        self._chain_pair_menu.currentIndexChanged.connect(self._preview_low_pae_residues)
         self._chain_pair_values.append(None)
         layout.addWidget(self._chain_pair_menu)
 
@@ -294,13 +307,26 @@ class AFDisplayController(ToolInstance):
 
         pae_filter_row = QHBoxLayout()
         layout.addLayout(pae_filter_row)
-        pae_filter_row.addWidget(
-            QLabel("Min inter-chain PAE < (smaller = more stringent)", parent)
+        cutoff_label = QLabel("Inter-chain PAE cutoff", parent)
+        cutoff_label.setToolTip(
+            "Live-highlight residues whose best PAE to the selected partner "
+            "chain(s) is below this value. Smaller values are more stringent."
         )
-        self._pae_threshold_entry = QLineEdit("20", parent)
-        self._pae_threshold_entry.setMaximumWidth(60)
-        pae_filter_row.addWidget(self._pae_threshold_entry)
-        select_pae_button = QPushButton("Select", parent)
+        pae_filter_row.addWidget(cutoff_label)
+        self._pae_threshold_slider = QSlider(Qt.Horizontal, parent)
+        self._pae_threshold_slider.setMinimum(0)
+        self._pae_threshold_slider.setMaximum(30)
+        self._pae_threshold_slider.setSingleStep(1)
+        self._pae_threshold_slider.setPageStep(5)
+        self._pae_threshold_slider.setTickInterval(5)
+        self._pae_threshold_slider.setTickPosition(QSlider.TicksBelow)
+        self._pae_threshold_slider.setValue(20)
+        self._pae_threshold_slider.valueChanged.connect(self._pae_threshold_changed)
+        pae_filter_row.addWidget(self._pae_threshold_slider, 1)
+        self._pae_threshold_value_label = QLabel("20", parent)
+        self._pae_threshold_value_label.setMinimumWidth(24)
+        pae_filter_row.addWidget(self._pae_threshold_value_label)
+        select_pae_button = QPushButton("Select Highlighted", parent)
         select_pae_button.clicked.connect(self._select_low_pae_residues)
         pae_filter_row.addWidget(select_pae_button)
         show_only_pae_button = QPushButton("Show Only", parent)
@@ -331,7 +357,11 @@ class AFDisplayController(ToolInstance):
         copy_output_button = QPushButton("Copy Output Path", parent)
         copy_output_button.clicked.connect(self._copy_output_path)
         manage_row.addWidget(copy_output_button)
-        reset_display_button = QPushButton("Reset Display", parent)
+        reset_display_button = QPushButton("Reset Active Run", parent)
+        reset_display_button.setToolTip(
+            "Restore this run to the initial model, PAE plot, cutoff, chain "
+            "filter, selection, and cartoon/contact-sidechain display."
+        )
         reset_display_button.clicked.connect(self._reset_active_run_display)
         manage_row.addWidget(reset_display_button)
         close_run_button = QPushButton("Close Run", parent)
@@ -451,6 +481,7 @@ class AFDisplayController(ToolInstance):
                 f"Input folder:\n{run['input_directory']}\n\n"
                 f"Output folder:\n{run['output_dir']}"
             )
+        self._update_status_strip()
 
     def _apply_visibility(self, *_args):
         run = self._current_run()
@@ -491,6 +522,7 @@ class AFDisplayController(ToolInstance):
         self._next_button.setEnabled(len(pairs) > 1)
         self._pair_slider.setEnabled(len(pairs) > 1 and not show_all)
         self._sync_controls()
+        self._preview_low_pae_residues()
 
     def _current_run(self):
         if 0 <= self._current_run_index < len(self._runs):
@@ -555,14 +587,31 @@ class AFDisplayController(ToolInstance):
         self._chain_pair_menu.blockSignals(False)
 
     def _pae_threshold(self):
-        text = self._pae_threshold_entry.text().strip()
-        try:
-            threshold = float(text)
-        except ValueError:
-            raise UserError(f"Invalid PAE threshold: {text!r}")
-        if threshold < 0:
-            raise UserError("PAE threshold must be non-negative.")
-        return threshold
+        return float(self._pae_threshold_slider.value())
+
+    def _pae_threshold_changed(self, value):
+        self._pae_threshold_value_label.setText(str(value))
+        self._preview_low_pae_residues()
+
+    def _preview_low_pae_residues(self, *_args):
+        from .workflow import preview_interchain_pae_residues
+
+        pae = self._current_pae()
+        run = self._current_run()
+        if pae is None or run is None:
+            self._preview_count = None
+            self._update_status_strip()
+            return
+        plot = run.get("pae_plot")
+        residues, message = preview_interchain_pae_residues(
+            self.session,
+            pae,
+            self._pae_threshold(),
+            chain_pair=self._current_chain_pair(),
+            plot=plot,
+        )
+        self._preview_count = len(residues)
+        self._update_status_strip()
 
     def _select_low_pae_residues(self):
         self._apply_interchain_pae_visibility("select")
@@ -586,7 +635,10 @@ class AFDisplayController(ToolInstance):
             threshold,
             mode,
             chain_pair=self._current_chain_pair(),
+            plot=self._current_run().get("pae_plot") if self._current_run() else None,
         )
+        if mode != "show_all":
+            self._preview_low_pae_residues()
         self._set_status(message)
         self.session.logger.info(message)
 
@@ -650,7 +702,10 @@ class AFDisplayController(ToolInstance):
         self._show_all.blockSignals(True)
         self._show_all.setChecked(False)
         self._show_all.blockSignals(False)
-        self._pae_threshold_entry.setText("20")
+        self._pae_threshold_slider.blockSignals(True)
+        self._pae_threshold_slider.setValue(20)
+        self._pae_threshold_value_label.setText("20")
+        self._pae_threshold_slider.blockSignals(False)
         self._current_pair_index = 0
         self._populate_pair_menu()
         self._chain_pair_menu.setCurrentIndex(0)
@@ -707,7 +762,26 @@ class AFDisplayController(ToolInstance):
                 self.session.logger.warning(f"Could not close AF run models: {err}")
 
     def _set_status(self, text):
-        self._status_label.setText(text)
+        self._last_action = text
+        self._update_status_strip()
+
+    def _update_status_strip(self):
+        run = self._current_run()
+        pair = self._current_pair()
+        if run is None or pair is None:
+            self._status_label.setText(f"Active: none\nLast: {self._last_action}")
+            return
+        parts = [
+            f"Active: {_display_pair_label(pair)}",
+            f"cutoff < {self._pae_threshold():g}",
+            f"chain pair: {_chain_pair_label(self._current_chain_pair())}",
+        ]
+        if self._preview_count is not None:
+            parts.append(f"highlighted: {self._preview_count}")
+        confidence_warning = _confidence_warning(self._current_pairs())
+        if confidence_warning:
+            parts.append(confidence_warning)
+        self._status_label.setText(" | ".join(parts) + f"\nLast: {self._last_action}")
 
 
 def _plot_closed(plot):
@@ -717,6 +791,19 @@ def _plot_closed(plot):
 
 def _display_pair_label(pair):
     return str(pair.get("display_label") or pair.get("label") or "")
+
+
+def _chain_pair_label(chain_pair):
+    if chain_pair is None:
+        return "all"
+    return f"{chain_pair[0]}-{chain_pair[1]}"
+
+
+def _confidence_warning(pairs):
+    missing = sum(1 for pair in pairs if pair.get("confidence_missing"))
+    if missing:
+        return f"confidence missing: {missing}"
+    return ""
 
 
 class AFMissenseTool(ToolInstance):

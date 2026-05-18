@@ -41,6 +41,7 @@ class PredictionPair:
     structure_path: Path
     score_path: Path
     confidence_score: Optional[float] = None
+    confidence_missing: bool = False
 
 
 @dataclass(frozen=True)
@@ -87,12 +88,16 @@ def run_af_prediction_analysis(
         structure_model, pae = _open_pair(session, pair)
         chain_id = _resolve_chain_id(structure_model, requested_chain)
         model_spec = _model_spec(structure_model)
-        _run_contact_workflow(session, pair, output_dir, chain_id, model_spec)
+        contact_residue_name = _run_contact_workflow(
+            session, pair, output_dir, chain_id, model_spec
+        )
         display_pairs.append(
             {
                 "label": pair.label,
                 "display_label": _pair_display_label(pair),
                 "confidence_score": pair.confidence_score,
+                "confidence_missing": pair.confidence_missing,
+                "contact_residue_name": contact_residue_name,
                 "model": structure_model,
                 "pae": pae,
             }
@@ -104,6 +109,8 @@ def run_af_prediction_analysis(
                 "structure": str(pair.structure_path),
                 "score_data": str(pair.score_path),
                 "confidence_score": pair.confidence_score,
+                "confidence_missing": pair.confidence_missing,
+                "contact_residue_name": contact_residue_name,
                 "contact_chain": chain_id,
                 "model_spec": model_spec,
             }
@@ -209,6 +216,7 @@ def _discover_af3_pairs(
                 structure,
                 score,
                 confidence_score=score_by_label.get(label),
+                confidence_missing=bool(score_by_label) and label not in score_by_label,
             )
         )
     return pairs
@@ -521,11 +529,12 @@ def _run_contact_workflow(
     output_dir: Path,
     chain_id: str,
     model_spec: Optional[str],
-) -> None:
+) -> Optional[str]:
     label = _safe_token(pair.label)
     structure_spec = model_spec or "last-opened"
     chain_spec = f"{structure_spec}&/{chain_id}"
     contact_file = output_dir / f"af_contacts_{label}.txt"
+    contact_residue_name = _contact_residue_name(pair)
     interface_name = f"interface_residues_{label}"
     interface_file = output_dir / f"interface_residues_{label}_buriedArea_300.txt"
     _unlink_if_exists(contact_file)
@@ -538,6 +547,15 @@ def _run_contact_workflow(
         + chain_spec
         + " outputFile "
         + quote_if_necessary(str(contact_file)),
+    ]
+    for command in commands:
+        run(session, command)
+
+    contact_residues_named = _name_contact_residues_from_file(
+        session, contact_file, structure_spec, contact_residue_name
+    )
+
+    commands = [
         "select " + structure_spec + "&pbonds",
         (
             'label sel pseudobonds text '
@@ -561,8 +579,16 @@ def _run_contact_workflow(
         "rainbow " + structure_spec + " chains palette bupu",
         "color byhetero",
     ]
+    if contact_residues_named:
+        commands.extend(
+            [
+                "show " + contact_residue_name + "&sidechain atoms",
+                "style " + contact_residue_name + "&sidechain stick",
+            ]
+        )
     for command in commands:
         run(session, command)
+    return contact_residue_name if contact_residues_named else None
 
 
 def _disable_pae_drag_coloring(plot) -> None:
@@ -593,6 +619,7 @@ def set_pae_plot_data(plot, pae) -> None:
 
 
 def _prepare_pae_plot(plot, pae) -> None:
+    _clear_pae_highlight(plot)
     _disable_pae_drag_coloring(plot)
     heading = getattr(plot, "_heading", None)
     if heading is not None:
@@ -649,6 +676,8 @@ def _write_analysis_summary(
                 f"  structure: {pair['structure']}",
                 f"  data: {pair['score_data']}",
                 f"  confidence score: {_format_confidence(pair.get('confidence_score'))}",
+                f"  confidence missing: {bool(pair.get('confidence_missing'))}",
+                f"  contact residues selection: {pair.get('contact_residue_name') or '(none)'}",
                 f"  contact chain: {pair['contact_chain']}",
                 f"  model spec: {pair['model_spec']}",
             ]
@@ -671,6 +700,7 @@ def apply_interchain_pae_visibility(
     max_pae: float,
     mode: str,
     chain_pair=None,
+    plot=None,
 ) -> str:
     structure = getattr(pae, "structure", None)
     model_spec = _model_spec(structure)
@@ -682,9 +712,11 @@ def apply_interchain_pae_visibility(
         for target in ("atoms", "bonds", "pseudobonds", "surfaces"):
             run(session, f"hide {model_spec} {target}")
         run(session, f"show {model_spec} cartoons")
+        _clear_pae_highlight(plot)
         return f"Restored cartoon-only display for {structure}."
 
     residues = _residues_with_min_interchain_pae_below(pae, max_pae, chain_pair)
+    highlight_pae_residues(plot, residues)
     scope = _chain_pair_scope_label(chain_pair)
     if not residues:
         return (
@@ -714,6 +746,14 @@ def apply_interchain_pae_visibility(
     )
 
 
+def preview_interchain_pae_residues(session, pae, max_pae: float, chain_pair=None, plot=None):
+    residues = _residues_with_min_interchain_pae_below(pae, max_pae, chain_pair)
+    _select_residues(session, residues)
+    highlight_pae_residues(plot, residues)
+    scope = _chain_pair_scope_label(chain_pair)
+    return residues, f"Previewing {len(residues)} residue(s) with minimum {scope} PAE < {max_pae:g}."
+
+
 def reset_prediction_display(session, display_pairs) -> None:
     for pair in display_pairs:
         model = pair.get("model")
@@ -723,6 +763,9 @@ def reset_prediction_display(session, display_pairs) -> None:
         for target in ("atoms", "bonds", "pseudobonds", "surfaces"):
             run(session, f"hide {model_spec} {target}")
         run(session, f"show {model_spec} cartoons")
+        contact_name = pair.get("contact_residue_name")
+        if contact_name:
+            _show_contact_sidechains(session, contact_name)
     run(session, "select clear")
 
 
@@ -803,6 +846,126 @@ def _unlink_if_exists(path: Path) -> None:
         path.unlink()
     except FileNotFoundError:
         pass
+
+
+def _contact_residue_name(pair: PredictionPair) -> str:
+    return f"af_contact_residues_{_safe_token(pair.label)}"
+
+
+def _name_contact_residues_from_file(
+    session, contact_file: Path, structure_spec: str, contact_residue_name: str
+) -> bool:
+    residue_tokens = _contact_residue_tokens(contact_file)
+    if not residue_tokens:
+        return False
+    residue_specs = " ".join(structure_spec + token for token in residue_tokens)
+    run(session, f"name frozen {contact_residue_name} {residue_specs}")
+    return True
+
+
+def _show_contact_sidechains(session, contact_residue_name: str) -> None:
+    run(session, f"show {contact_residue_name}&sidechain atoms")
+    run(session, f"style {contact_residue_name}&sidechain stick")
+
+
+def _contact_residue_tokens(contact_file: Path) -> Tuple[str, ...]:
+    try:
+        lines = contact_file.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ()
+
+    tokens = []
+    seen = set()
+    for line in lines:
+        fields = line.split()
+        for token in fields[:2]:
+            if not token.startswith("/") or ":" not in token or token in seen:
+                continue
+            seen.add(token)
+            tokens.append(token)
+    return tuple(tokens)
+
+
+def highlight_pae_residues(plot, residues) -> None:
+    _clear_pae_highlight(plot)
+    if plot is None or _plot_closed(plot) or not residues:
+        return
+    try:
+        view = plot._pae_view
+        scene = view.scene()
+        rra = plot._pae.row_residues_or_atoms()
+    except Exception:
+        return
+
+    residue_set = set(residues)
+    indices = [
+        index
+        for index, row in enumerate(rra)
+        if _residue_for_pae_row(row) in residue_set
+    ]
+    if not indices:
+        return
+
+    try:
+        from Qt.QtGui import QBrush, QColor, QPen
+
+        brush = QBrush(QColor(255, 191, 0, 55))
+        pen = QPen(QColor(255, 128, 0, 180))
+        rect = scene.sceneRect()
+        width, height = rect.width(), rect.height()
+        items = []
+        for start, end in _contiguous_ranges(indices):
+            span = end - start + 1
+            items.append(scene.addRect(0, start, width, span, pen=pen, brush=brush))
+            items.append(scene.addRect(start, 0, span, height, pen=pen, brush=brush))
+        for item in items:
+            item.setZValue(2)
+        plot._af_toolbar_highlight_items = items
+    except Exception:
+        _clear_pae_highlight(plot)
+
+
+def _clear_pae_highlight(plot) -> None:
+    if plot is None:
+        return
+    items = getattr(plot, "_af_toolbar_highlight_items", None)
+    if not items:
+        return
+    try:
+        scene = plot._pae_view.scene()
+        for item in list(items):
+            scene.removeItem(item)
+    except Exception:
+        pass
+    plot._af_toolbar_highlight_items = []
+
+
+def _select_residues(session, residues) -> None:
+    session.selection.clear()
+    if not residues:
+        return
+    from chimerax.atomic import Atoms
+
+    atoms = []
+    for residue in residues:
+        if residue is not None and not getattr(residue, "deleted", False):
+            atoms.extend(residue.atoms)
+    if atoms:
+        Atoms(atoms).selected = True
+
+
+def _contiguous_ranges(indices):
+    indices = sorted(set(indices))
+    if not indices:
+        return
+    start = previous = indices[0]
+    for index in indices[1:]:
+        if index == previous + 1:
+            previous = index
+            continue
+        yield start, previous
+        start = previous = index
+    yield start, previous
 
 
 def chain_pair_options(structure_model) -> Tuple[Tuple[str, str], ...]:
@@ -1010,6 +1173,8 @@ def _format_pair(pair: PredictionPair, root: Path) -> str:
 
 
 def _pair_display_label(pair: PredictionPair) -> str:
+    if pair.confidence_missing:
+        return f"{pair.label} (confidence missing)"
     if pair.confidence_score is None:
         return pair.label
     return f"{pair.label} (confidence {_format_confidence(pair.confidence_score)})"

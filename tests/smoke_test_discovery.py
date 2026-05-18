@@ -93,6 +93,24 @@ def main() -> int:
         _assert_scores(scored_all, [0.91, 0.72, 0.63])
         _assert_labels(workflow._pairs_for_mode(af3_scored, "af3-top", ""), ["model_1"])
 
+        af3_partial_scores = root / "fold_2026_05_13_partial_scores"
+        for model_id in range(3):
+            _write(af3_partial_scores / f"fold_test_model_{model_id}.cif", "data_test\n")
+            _write(
+                af3_partial_scores / f"fold_test_full_data_{model_id}.json",
+                json.dumps({"pae": [[0, 1], [1, 0]]}),
+            )
+        _write(
+            af3_partial_scores / "fold_test_summary_confidences_2.json",
+            json.dumps({"ranking_score": 0.88}),
+        )
+
+        partial_all = workflow._pairs_for_mode(af3_partial_scores, "af3-all", "")
+        _assert_labels(partial_all, ["model_2", "model_0", "model_1"])
+        missing_flags = [pair.confidence_missing for pair in partial_all]
+        if missing_flags != [False, True, True]:
+            raise AssertionError(f"unexpected confidence-missing flags {missing_flags!r}")
+
         af2 = root / "af2_test"
         for rank in (1, 2, 3):
             _write(af2 / "pdb" / f"job_rank_{rank}_model.pdb", "HEADER test\n")
