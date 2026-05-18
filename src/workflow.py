@@ -88,6 +88,9 @@ def run_af_prediction_analysis(
     for pair in pairs:
         structure_model, pae = _open_pair(session, pair)
         model_spec = _model_spec(structure_model)
+        contact_result = _prepare_contact_interface_display(
+            session, pair.label, structure_model, requested_chain
+        )
         display_pairs.append(
             {
                 "label": pair.label,
@@ -96,8 +99,8 @@ def run_af_prediction_analysis(
                 "score_path": pair.score_path,
                 "confidence_score": pair.confidence_score,
                 "confidence_missing": pair.confidence_missing,
-                "contact_residue_name": None,
-                "interface_residue_name": None,
+                "contact_residue_name": contact_result["contact_residue_name"],
+                "interface_residue_name": contact_result["interface_residue_name"],
                 "contact_analysis_files": {},
                 "model": structure_model,
                 "pae": pae,
@@ -111,8 +114,10 @@ def run_af_prediction_analysis(
                 "score_data": str(pair.score_path),
                 "confidence_score": pair.confidence_score,
                 "confidence_missing": pair.confidence_missing,
-                "contact_analysis": "not run automatically",
+                "contact_analysis": "prepared in ChimeraX; files not written automatically",
                 "requested_contact_chain": requested_chain,
+                "contact_residue_name": contact_result["contact_residue_name"],
+                "interface_residue_name": contact_result["interface_residue_name"],
                 "model_spec": model_spec,
             }
         )
@@ -133,8 +138,8 @@ def run_af_prediction_analysis(
     summary = (
         f"Opened {len(pairs)} {_mode_label(mode)} pair(s).\n"
         f"Run metadata was written to:\n{output_dir}\n"
-        "Contacts and interface files are not written on open; use "
-        "'Run Contacts/Interfaces' for the active model."
+        "Contacts/interfaces were prepared for display. Files are written only "
+        "when you use 'Run Contacts/Interfaces' for the active model."
     )
     return AnalysisResult(
         mode=mode,
@@ -540,7 +545,15 @@ def run_contacts_interfaces_for_pair(
 
     label = str(display_pair.get("label") or "model")
     chain_id = _resolve_chain_id(model, requested_chain)
-    result = _run_contact_workflow(session, label, output_dir, chain_id, model_spec)
+    result = _run_contact_workflow(
+        session,
+        label,
+        output_dir,
+        chain_id,
+        model_spec,
+        model,
+        write_files=True,
+    )
     display_pair["contact_residue_name"] = result["contact_residue_name"]
     display_pair["interface_residue_name"] = result["interface_residue_name"]
     display_pair["contact_analysis_files"] = result["files"]
@@ -551,32 +564,64 @@ def run_contacts_interfaces_for_pair(
     )
 
 
+def _prepare_contact_interface_display(
+    session, pair_label: str, structure_model, requested_chain: Optional[str]
+) -> Dict[str, object]:
+    model_spec = _model_spec(structure_model)
+    if model_spec is None:
+        return _empty_contact_result()
+    chain_id = _resolve_chain_id(structure_model, requested_chain)
+    try:
+        return _run_contact_workflow(
+            session,
+            pair_label,
+            None,
+            chain_id,
+            model_spec,
+            structure_model,
+            write_files=False,
+        )
+    except Exception as err:
+        name = getattr(structure_model, "name", pair_label)
+        session.logger.warning(
+            f"Could not prepare contacts/interfaces for {name}: {err}"
+        )
+        return _empty_contact_result()
+
+
 def _run_contact_workflow(
     session,
     pair_label: str,
-    output_dir: Path,
+    output_dir: Optional[Path],
     chain_id: str,
     model_spec: Optional[str],
+    structure_model,
+    *,
+    write_files: bool,
 ) -> Dict[str, object]:
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if write_files:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
     label = _safe_token(pair_label)
     structure_spec = model_spec or "last-opened"
     chain_spec = f"{structure_spec}&/{chain_id}"
-    contact_raw_file = output_dir / f"af_contacts_{label}_raw.txt"
-    contact_tsv_file = output_dir / f"af_contacts_{label}.tsv"
-    contact_report_file = output_dir / f"af_contacts_{label}.txt"
+    contact_pseudobond_name = f"af_contacts_{label}"
+    contact_raw_file = output_dir / f"af_contacts_{label}_raw.txt" if write_files else None
+    contact_tsv_file = output_dir / f"af_contacts_{label}.tsv" if write_files else None
+    contact_report_file = output_dir / f"af_contacts_{label}.txt" if write_files else None
     contact_residue_name = _contact_residue_name(pair_label)
     interface_name = f"interface_residues_{label}"
-    interface_raw_file = output_dir / f"interface_residues_{label}_raw.txt"
-    interface_report_file = output_dir / f"interface_residues_{label}.txt"
-    for path in (
-        contact_raw_file,
-        contact_tsv_file,
-        contact_report_file,
-        interface_raw_file,
-        interface_report_file,
-    ):
-        _unlink_if_exists(path)
+    interface_raw_file = output_dir / f"interface_residues_{label}_raw.txt" if write_files else None
+    interface_report_file = output_dir / f"interface_residues_{label}.txt" if write_files else None
+    if write_files:
+        for path in (
+            contact_raw_file,
+            contact_tsv_file,
+            contact_report_file,
+            interface_raw_file,
+            interface_report_file,
+        ):
+            _unlink_if_exists(path)
 
     commands = [
         "hide " + structure_spec + " atoms",
@@ -585,23 +630,29 @@ def _run_contact_workflow(
         "show " + structure_spec + " cartoons",
         "alphafold contacts "
         + chain_spec
-        + " outputFile "
-        + quote_if_necessary(str(contact_raw_file)),
+        + " name "
+        + quote_if_necessary(contact_pseudobond_name),
     ]
+    if write_files:
+        commands[-1] += " outputFile " + quote_if_necessary(str(contact_raw_file))
     for command in commands:
         run(session, command)
 
-    contact_rows = _read_contact_rows(contact_raw_file)
-    _write_contact_reports(
-        contact_rows,
-        contact_report_file,
-        contact_tsv_file,
-        pair_label=pair_label,
-        model_spec=structure_spec,
-        chain_id=chain_id,
+    contact_rows = _read_contact_rows(contact_raw_file) if write_files else []
+    if write_files:
+        _write_contact_reports(
+            contact_rows,
+            contact_report_file,
+            contact_tsv_file,
+            pair_label=pair_label,
+            model_spec=structure_spec,
+            chain_id=chain_id,
+        )
+    contact_residues = _contact_residues_from_pseudobonds(
+        structure_model, contact_pseudobond_name
     )
-    contact_residues_named = _name_contact_residues_from_file(
-        session, contact_raw_file, structure_spec, contact_residue_name
+    contact_residues_named = _name_residues_from_residues(
+        session, contact_residues, contact_residue_name
     )
 
     commands = [
@@ -618,30 +669,37 @@ def _run_contact_workflow(
         + "&~/"
         + chain_id
         + " bothSides true",
-        "info residues "
-        + "sel"
-        + " saveFile "
-        + quote_if_necessary(str(interface_raw_file)),
         "rainbow " + structure_spec + " chains palette bupu",
         "color byhetero",
     ]
     for command in commands:
         run(session, command)
 
-    interface_tokens = _info_residue_tokens(interface_raw_file)
-    interface_named = _name_residues_from_tokens(
-        session, interface_tokens, structure_spec, interface_name
+    interface_residues = _selected_residues_for_structure(session, structure_model)
+    interface_named = _name_residues_from_residues(
+        session, interface_residues, interface_name
     )
-    _write_interface_report(
-        interface_tokens,
-        interface_report_file,
-        pair_label=pair_label,
-        model_spec=structure_spec,
-        chain_id=chain_id,
-    )
+    interface_tokens = _residue_tokens_from_residues(interface_residues)
+    if write_files:
+        if interface_named:
+            run(
+                session,
+                "info residues "
+                + interface_name
+                + " saveFile "
+                + quote_if_necessary(str(interface_raw_file)),
+            )
+        _write_interface_report(
+            interface_tokens,
+            interface_report_file,
+            pair_label=pair_label,
+            model_spec=structure_spec,
+            chain_id=chain_id,
+        )
     if interface_named:
         run(session, "select " + interface_name)
         run(session, "show " + interface_name + " atoms")
+        run(session, "show " + interface_name + " bonds")
         run(session, "style " + interface_name + " stick")
     if contact_residues_named:
         _show_contact_sidechains(session, contact_residue_name)
@@ -649,16 +707,43 @@ def _run_contact_workflow(
     return {
         "contact_residue_name": contact_residue_name if contact_residues_named else None,
         "interface_residue_name": interface_name if interface_named else None,
-        "contact_count": len(contact_rows),
+        "contact_count": len(contact_rows) if write_files else _pseudobond_count(structure_model, contact_pseudobond_name),
         "interface_residue_count": len(interface_tokens),
-        "files": {
-            "contact_report": contact_report_file,
-            "contact_tsv": contact_tsv_file,
-            "contact_raw": contact_raw_file,
-            "interface_report": interface_report_file,
-            "interface_raw": interface_raw_file,
-        },
+        "files": _contact_output_files(
+            contact_report_file,
+            contact_tsv_file,
+            contact_raw_file,
+            interface_report_file,
+            interface_raw_file,
+        ),
     }
+
+
+def _empty_contact_result() -> Dict[str, object]:
+    return {
+        "contact_residue_name": None,
+        "interface_residue_name": None,
+        "contact_count": 0,
+        "interface_residue_count": 0,
+        "files": {},
+    }
+
+
+def _contact_output_files(
+    contact_report_file,
+    contact_tsv_file,
+    contact_raw_file,
+    interface_report_file,
+    interface_raw_file,
+) -> Dict[str, Path]:
+    files = {
+        "contact_report": contact_report_file,
+        "contact_tsv": contact_tsv_file,
+        "contact_raw": contact_raw_file,
+        "interface_report": interface_report_file,
+        "interface_raw": interface_raw_file,
+    }
+    return {key: value for key, value in files.items() if value is not None}
 
 
 def _disable_pae_drag_coloring(plot) -> None:
@@ -736,8 +821,9 @@ def _write_analysis_summary(
         f"Output folder: {output_dir}",
         f"Name/filter: {prediction_filter or '(none)'}",
         f"Requested contact chain: {requested_chain or '(first chain per structure)'}",
-        "Contact/interface files: not generated on open; use the controller "
-        "button for the active model.",
+        "Contact/interface display: prepared on open.",
+        "Contact/interface files: written only when the controller button is "
+        "used for the active model.",
         "",
         "Opened pairs:",
     ]
@@ -955,8 +1041,19 @@ def _name_residues_from_tokens(
     return True
 
 
+def _name_residues_from_residues(session, residues, selection_name: str) -> bool:
+    if residues is None or len(residues) == 0:
+        return False
+    from chimerax.atomic import concise_residue_spec
+
+    residue_spec = concise_residue_spec(session, residues)
+    run(session, f"name frozen {selection_name} {residue_spec}")
+    return True
+
+
 def _show_contact_sidechains(session, contact_residue_name: str) -> None:
     run(session, f"show {contact_residue_name}&sidechain atoms")
+    run(session, f"show {contact_residue_name}&sidechain bonds")
     run(session, f"style {contact_residue_name}&sidechain stick")
 
 
@@ -975,6 +1072,56 @@ def _contact_residue_tokens(contact_file: Path) -> Tuple[str, ...]:
                 continue
             seen.add(token)
             tokens.append(token)
+    return tuple(tokens)
+
+
+def _contact_residues_from_pseudobonds(structure_model, pseudobond_name: str):
+    if structure_model is None:
+        return None
+    try:
+        group = structure_model.pseudobond_group(pseudobond_name)
+        pbonds = group.pseudobonds
+        atoms1, atoms2 = pbonds.atoms
+        from chimerax.atomic import Atoms, concatenate
+
+        atoms = concatenate((atoms1, atoms2), Atoms)
+        return atoms.unique_residues
+    except Exception:
+        return None
+
+
+def _pseudobond_count(structure_model, pseudobond_name: str) -> int:
+    if structure_model is None:
+        return 0
+    try:
+        return len(structure_model.pseudobond_group(pseudobond_name).pseudobonds)
+    except Exception:
+        return 0
+
+
+def _selected_residues_for_structure(session, structure_model):
+    from chimerax.atomic import Residues, selected_residues
+
+    residues = selected_residues(session)
+    if structure_model is None or len(residues) == 0:
+        return residues
+    selected = [
+        residue
+        for residue in residues
+        if getattr(residue, "structure", None) is structure_model
+    ]
+    return Residues(selected)
+
+
+def _residue_tokens_from_residues(residues) -> Tuple[str, ...]:
+    if residues is None:
+        return ()
+    tokens = []
+    for residue in residues:
+        chain_id = getattr(residue, "chain_id", "") or "?"
+        number = getattr(residue, "number", "")
+        insertion_code = getattr(residue, "insertion_code", "") or ""
+        tokens.append(f"/{chain_id}:{number}{insertion_code}")
     return tuple(tokens)
 
 
@@ -1246,7 +1393,7 @@ def _chains_allowed(chain_a: str, chain_b: str, allowed_chain_pairs) -> bool:
 
 def _chain_pair_scope_label(chain_pair) -> str:
     if chain_pair is None:
-        return "inter-chain"
+        return "any inter-chain pair"
     return f"{chain_pair[0]}-{chain_pair[1]}"
 
 

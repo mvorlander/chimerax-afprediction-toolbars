@@ -215,6 +215,7 @@ class AFDisplayController(ToolInstance):
         from Qt.QtWidgets import (
             QCheckBox,
             QComboBox,
+            QGroupBox,
             QHBoxLayout,
             QLabel,
             QLineEdit,
@@ -256,23 +257,6 @@ class AFDisplayController(ToolInstance):
         self._pair_menu.currentIndexChanged.connect(self._set_pair_index)
         layout.addWidget(self._pair_menu)
 
-        chain_pair_label = QLabel("PAE chain pair", parent)
-        chain_pair_label.setToolTip(
-            "Choose which chain pair is used by the inter-chain PAE cutoff. "
-            "All pairs means a residue is highlighted if it has a confident "
-            "PAE contact to any other chain."
-        )
-        layout.addWidget(chain_pair_label)
-        self._chain_pair_menu = QComboBox(parent)
-        self._chain_pair_menu.addItem("All inter-chain pairs")
-        self._chain_pair_menu.setToolTip(
-            "Filters the inter-chain PAE cutoff tool. It does not change which "
-            "model is displayed."
-        )
-        self._chain_pair_menu.currentIndexChanged.connect(self._preview_low_pae_residues)
-        self._chain_pair_values.append(None)
-        layout.addWidget(self._chain_pair_menu)
-
         slider_row = QHBoxLayout()
         layout.addLayout(slider_row)
         slider_row.addWidget(QLabel("Model/PAE", parent))
@@ -301,31 +285,63 @@ class AFDisplayController(ToolInstance):
         self._show_all.stateChanged.connect(self._apply_visibility)
         layout.addWidget(self._show_all)
 
+        pae_group = QGroupBox("Inter-chain PAE selection", parent)
+        pae_group.setToolTip(
+            "Select residues by their minimum inter-chain PAE. "
+            "'All inter-chain pairs' means a residue passes if at least one "
+            "residue in any other chain is below the cutoff."
+        )
+        pae_group_layout = QVBoxLayout(pae_group)
+        pae_group_layout.setContentsMargins(8, 8, 8, 8)
+        pae_group_layout.setSpacing(6)
+        layout.addWidget(pae_group)
+
+        chain_pair_label = QLabel("PAE chain pair", pae_group)
+        chain_pair_label.setToolTip(
+            "Choose which chain pair is used by the PAE cutoff. "
+            "'All inter-chain pairs' means the best contact to any other "
+            "chain is considered."
+        )
+        pae_group_layout.addWidget(chain_pair_label)
+        self._chain_pair_menu = QComboBox(pae_group)
+        self._chain_pair_menu.addItem("All inter-chain pairs")
+        self._chain_pair_menu.setToolTip(
+            "Filters the PAE cutoff tool. It does not change which model is "
+            "displayed. All inter-chain pairs selects a residue if its "
+            "minimum PAE to at least one residue in any other chain is below "
+            "the cutoff."
+        )
+        self._chain_pair_menu.currentIndexChanged.connect(self._preview_low_pae_residues)
+        self._chain_pair_values.append(None)
+        pae_group_layout.addWidget(self._chain_pair_menu)
+
         pae_cutoff_row = QHBoxLayout()
-        layout.addLayout(pae_cutoff_row)
-        cutoff_label = QLabel("PAE cutoff", parent)
+        pae_group_layout.addLayout(pae_cutoff_row)
+        cutoff_label = QLabel("PAE cutoff", pae_group)
         cutoff_label.setToolTip(
             "Live-highlight residues whose best PAE to the selected partner "
-            "chain(s) is below this value. Smaller values are more stringent."
+            "chain(s) is below this value. With All inter-chain pairs, at "
+            "least one partner residue in any other chain must be below the "
+            "cutoff. Smaller values are more stringent."
         )
         pae_cutoff_row.addWidget(cutoff_label)
-        self._pae_threshold_slider = QSlider(Qt.Horizontal, parent)
+        self._pae_threshold_slider = QSlider(Qt.Horizontal, pae_group)
         self._pae_threshold_slider.setMinimum(0)
         self._pae_threshold_slider.setMaximum(30)
         self._pae_threshold_slider.setSingleStep(1)
         self._pae_threshold_slider.setPageStep(5)
         self._pae_threshold_slider.setTickInterval(5)
         self._pae_threshold_slider.setTickPosition(QSlider.TicksBelow)
-        self._pae_threshold_slider.setValue(20)
+        self._pae_threshold_slider.setValue(10)
         self._pae_threshold_slider.valueChanged.connect(self._pae_threshold_changed)
         pae_cutoff_row.addWidget(self._pae_threshold_slider, 1)
-        self._pae_threshold_value_label = QLabel("20", parent)
+        self._pae_threshold_value_label = QLabel("10", pae_group)
         self._pae_threshold_value_label.setMinimumWidth(24)
         pae_cutoff_row.addWidget(self._pae_threshold_value_label)
 
         pae_action_row = QHBoxLayout()
-        layout.addLayout(pae_action_row)
-        self._live_pae_highlight = QCheckBox("Live PAE highlight", parent)
+        pae_group_layout.addLayout(pae_action_row)
+        self._live_pae_highlight = QCheckBox("Live PAE highlight", pae_group)
         self._live_pae_highlight.setChecked(True)
         self._live_pae_highlight.setToolTip(
             "When enabled, moving the cutoff slider live-selects matching "
@@ -333,10 +349,10 @@ class AFDisplayController(ToolInstance):
         )
         self._live_pae_highlight.stateChanged.connect(self._live_pae_highlight_changed)
         pae_action_row.addWidget(self._live_pae_highlight, 1)
-        show_only_pae_button = QPushButton("Show Only", parent)
+        show_only_pae_button = QPushButton("Show Only", pae_group)
         show_only_pae_button.clicked.connect(self._show_only_low_pae_residues)
         pae_action_row.addWidget(show_only_pae_button)
-        show_all_pae_button = QPushButton("Show All", parent)
+        show_all_pae_button = QPushButton("Show All", pae_group)
         show_all_pae_button.clicked.connect(self._show_all_current_model)
         pae_action_row.addWidget(show_all_pae_button)
 
@@ -739,8 +755,8 @@ class AFDisplayController(ToolInstance):
         self._show_all.setChecked(False)
         self._show_all.blockSignals(False)
         self._pae_threshold_slider.blockSignals(True)
-        self._pae_threshold_slider.setValue(20)
-        self._pae_threshold_value_label.setText("20")
+        self._pae_threshold_slider.setValue(10)
+        self._pae_threshold_value_label.setText("10")
         self._pae_threshold_slider.blockSignals(False)
         self._live_pae_highlight.setChecked(True)
         self._current_pair_index = 0
@@ -834,7 +850,7 @@ def _display_pair_label(pair):
 
 def _chain_pair_label(chain_pair):
     if chain_pair is None:
-        return "all"
+        return "all inter-chain pairs"
     return f"{chain_pair[0]}-{chain_pair[1]}"
 
 

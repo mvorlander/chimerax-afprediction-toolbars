@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.7
+
+- Prepare AlphaFold contacts and interface selections for display when models
+  are opened, while keeping contact/interface file writing behind the explicit
+  `Run Contacts/Interfaces` button.
+- Show bonds for interface and contact-sidechain stick displays so interface
+  residues appear as connected residue sticks instead of isolated atoms.
+- Clarified that `All inter-chain pairs` in the PAE cutoff tool means a residue
+  passes if at least one partner residue in any other chain is below the cutoff.
+- Changed the default PAE cutoff from 20 to 10.
+- Visually grouped the inter-chain PAE controls into a dedicated panel.
+
 ## 1.3.6
 
 - Removed the duplicate launcher `Choose Folder` button; the folder row now has
