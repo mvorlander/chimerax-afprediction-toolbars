@@ -49,6 +49,7 @@ class AnalysisResult:
     mode: str
     run_label: str
     input_directory: Path
+    requested_chain: Optional[str]
     summary: str
     output_dir: Path
     opened_pairs: Tuple[PredictionPair, ...]
@@ -86,18 +87,18 @@ def run_af_prediction_analysis(
 
     for pair in pairs:
         structure_model, pae = _open_pair(session, pair)
-        chain_id = _resolve_chain_id(structure_model, requested_chain)
         model_spec = _model_spec(structure_model)
-        contact_residue_name = _run_contact_workflow(
-            session, pair, output_dir, chain_id, model_spec
-        )
         display_pairs.append(
             {
                 "label": pair.label,
                 "display_label": _pair_display_label(pair),
+                "structure_path": pair.structure_path,
+                "score_path": pair.score_path,
                 "confidence_score": pair.confidence_score,
                 "confidence_missing": pair.confidence_missing,
-                "contact_residue_name": contact_residue_name,
+                "contact_residue_name": None,
+                "interface_residue_name": None,
+                "contact_analysis_files": {},
                 "model": structure_model,
                 "pae": pae,
             }
@@ -110,8 +111,8 @@ def run_af_prediction_analysis(
                 "score_data": str(pair.score_path),
                 "confidence_score": pair.confidence_score,
                 "confidence_missing": pair.confidence_missing,
-                "contact_residue_name": contact_residue_name,
-                "contact_chain": chain_id,
+                "contact_analysis": "not run automatically",
+                "requested_contact_chain": requested_chain,
                 "model_spec": model_spec,
             }
         )
@@ -131,12 +132,15 @@ def run_af_prediction_analysis(
 
     summary = (
         f"Opened {len(pairs)} {_mode_label(mode)} pair(s).\n"
-        f"Analysis files were written to:\n{output_dir}"
+        f"Run metadata was written to:\n{output_dir}\n"
+        "Contacts and interface files are not written on open; use "
+        "'Run Contacts/Interfaces' for the active model."
     )
     return AnalysisResult(
         mode=mode,
         run_label=run_label,
         input_directory=directory,
+        requested_chain=requested_chain,
         summary=summary,
         output_dir=output_dir,
         opened_pairs=tuple(pairs),
@@ -523,36 +527,81 @@ def _open_pair(session, pair: PredictionPair):
     return structure_model, pae
 
 
+def run_contacts_interfaces_for_pair(
+    session,
+    display_pair: Dict[str, object],
+    output_dir: Path,
+    requested_chain: Optional[str] = None,
+) -> str:
+    model = display_pair.get("model")
+    model_spec = _model_spec(model)
+    if model_spec is None:
+        raise UserError("No active structure model is available for contact analysis.")
+
+    label = str(display_pair.get("label") or "model")
+    chain_id = _resolve_chain_id(model, requested_chain)
+    result = _run_contact_workflow(session, label, output_dir, chain_id, model_spec)
+    display_pair["contact_residue_name"] = result["contact_residue_name"]
+    display_pair["interface_residue_name"] = result["interface_residue_name"]
+    display_pair["contact_analysis_files"] = result["files"]
+    return (
+        f"Ran contacts/interfaces for {label} on chain {chain_id}. "
+        f"Contacts: {result['contact_count']}; interface residues: "
+        f"{result['interface_residue_count']}. Files were written to:\n{output_dir}"
+    )
+
+
 def _run_contact_workflow(
     session,
-    pair: PredictionPair,
+    pair_label: str,
     output_dir: Path,
     chain_id: str,
     model_spec: Optional[str],
-) -> Optional[str]:
-    label = _safe_token(pair.label)
+) -> Dict[str, object]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    label = _safe_token(pair_label)
     structure_spec = model_spec or "last-opened"
     chain_spec = f"{structure_spec}&/{chain_id}"
-    contact_file = output_dir / f"af_contacts_{label}.txt"
-    contact_residue_name = _contact_residue_name(pair)
+    contact_raw_file = output_dir / f"af_contacts_{label}_raw.txt"
+    contact_tsv_file = output_dir / f"af_contacts_{label}.tsv"
+    contact_report_file = output_dir / f"af_contacts_{label}.txt"
+    contact_residue_name = _contact_residue_name(pair_label)
     interface_name = f"interface_residues_{label}"
-    interface_file = output_dir / f"interface_residues_{label}_buriedArea_300.txt"
-    _unlink_if_exists(contact_file)
-    _unlink_if_exists(interface_file)
+    interface_raw_file = output_dir / f"interface_residues_{label}_raw.txt"
+    interface_report_file = output_dir / f"interface_residues_{label}.txt"
+    for path in (
+        contact_raw_file,
+        contact_tsv_file,
+        contact_report_file,
+        interface_raw_file,
+        interface_report_file,
+    ):
+        _unlink_if_exists(path)
 
     commands = [
-        "hide",
-        "show c",
+        "hide " + structure_spec + " atoms",
+        "hide " + structure_spec + " bonds",
+        "hide " + structure_spec + " surfaces",
+        "show " + structure_spec + " cartoons",
         "alphafold contacts "
         + chain_spec
         + " outputFile "
-        + quote_if_necessary(str(contact_file)),
+        + quote_if_necessary(str(contact_raw_file)),
     ]
     for command in commands:
         run(session, command)
 
+    contact_rows = _read_contact_rows(contact_raw_file)
+    _write_contact_reports(
+        contact_rows,
+        contact_report_file,
+        contact_tsv_file,
+        pair_label=pair_label,
+        model_spec=structure_spec,
+        chain_id=chain_id,
+    )
     contact_residues_named = _name_contact_residues_from_file(
-        session, contact_file, structure_spec, contact_residue_name
+        session, contact_raw_file, structure_spec, contact_residue_name
     )
 
     commands = [
@@ -569,26 +618,47 @@ def _run_contact_workflow(
         + "&~/"
         + chain_id
         + " bothSides true",
-        "name frozen " + interface_name + " sel",
-        "show " + interface_name,
-        "style " + interface_name + " ball",
         "info residues "
-        + interface_name
+        + "sel"
         + " saveFile "
-        + quote_if_necessary(str(interface_file)),
+        + quote_if_necessary(str(interface_raw_file)),
         "rainbow " + structure_spec + " chains palette bupu",
         "color byhetero",
     ]
-    if contact_residues_named:
-        commands.extend(
-            [
-                "show " + contact_residue_name + "&sidechain atoms",
-                "style " + contact_residue_name + "&sidechain stick",
-            ]
-        )
     for command in commands:
         run(session, command)
-    return contact_residue_name if contact_residues_named else None
+
+    interface_tokens = _info_residue_tokens(interface_raw_file)
+    interface_named = _name_residues_from_tokens(
+        session, interface_tokens, structure_spec, interface_name
+    )
+    _write_interface_report(
+        interface_tokens,
+        interface_report_file,
+        pair_label=pair_label,
+        model_spec=structure_spec,
+        chain_id=chain_id,
+    )
+    if interface_named:
+        run(session, "select " + interface_name)
+        run(session, "show " + interface_name + " atoms")
+        run(session, "style " + interface_name + " stick")
+    if contact_residues_named:
+        _show_contact_sidechains(session, contact_residue_name)
+
+    return {
+        "contact_residue_name": contact_residue_name if contact_residues_named else None,
+        "interface_residue_name": interface_name if interface_named else None,
+        "contact_count": len(contact_rows),
+        "interface_residue_count": len(interface_tokens),
+        "files": {
+            "contact_report": contact_report_file,
+            "contact_tsv": contact_tsv_file,
+            "contact_raw": contact_raw_file,
+            "interface_report": interface_report_file,
+            "interface_raw": interface_raw_file,
+        },
+    }
 
 
 def _disable_pae_drag_coloring(plot) -> None:
@@ -666,6 +736,8 @@ def _write_analysis_summary(
         f"Output folder: {output_dir}",
         f"Name/filter: {prediction_filter or '(none)'}",
         f"Requested contact chain: {requested_chain or '(first chain per structure)'}",
+        "Contact/interface files: not generated on open; use the controller "
+        "button for the active model.",
         "",
         "Opened pairs:",
     ]
@@ -677,8 +749,8 @@ def _write_analysis_summary(
                 f"  data: {pair['score_data']}",
                 f"  confidence score: {_format_confidence(pair.get('confidence_score'))}",
                 f"  confidence missing: {bool(pair.get('confidence_missing'))}",
-                f"  contact residues selection: {pair.get('contact_residue_name') or '(none)'}",
-                f"  contact chain: {pair['contact_chain']}",
+                f"  contact analysis: {pair['contact_analysis']}",
+                f"  requested contact chain: {pair.get('requested_contact_chain') or '(first chain)'}",
                 f"  model spec: {pair['model_spec']}",
             ]
         )
@@ -860,18 +932,26 @@ def _unlink_if_exists(path: Path) -> None:
         pass
 
 
-def _contact_residue_name(pair: PredictionPair) -> str:
-    return f"af_contact_residues_{_safe_token(pair.label)}"
+def _contact_residue_name(pair_label: str) -> str:
+    return f"af_contact_residues_{_safe_token(pair_label)}"
 
 
 def _name_contact_residues_from_file(
     session, contact_file: Path, structure_spec: str, contact_residue_name: str
 ) -> bool:
     residue_tokens = _contact_residue_tokens(contact_file)
+    return _name_residues_from_tokens(
+        session, residue_tokens, structure_spec, contact_residue_name
+    )
+
+
+def _name_residues_from_tokens(
+    session, residue_tokens: Tuple[str, ...], structure_spec: str, selection_name: str
+) -> bool:
     if not residue_tokens:
         return False
     residue_specs = " ".join(structure_spec + token for token in residue_tokens)
-    run(session, f"name frozen {contact_residue_name} {residue_specs}")
+    run(session, f"name frozen {selection_name} {residue_specs}")
     return True
 
 
@@ -896,6 +976,137 @@ def _contact_residue_tokens(contact_file: Path) -> Tuple[str, ...]:
             seen.add(token)
             tokens.append(token)
     return tuple(tokens)
+
+
+def _read_contact_rows(contact_file: Path) -> List[Tuple[str, str, Optional[float]]]:
+    try:
+        lines = contact_file.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+
+    rows = []
+    for line in lines:
+        fields = line.split()
+        if len(fields) < 2:
+            continue
+        value = None
+        if len(fields) >= 3:
+            try:
+                value = float(fields[2])
+            except ValueError:
+                value = None
+        rows.append((fields[0], fields[1], value))
+    return rows
+
+
+def _write_contact_reports(
+    rows: List[Tuple[str, str, Optional[float]]],
+    report_file: Path,
+    tsv_file: Path,
+    *,
+    pair_label: str,
+    model_spec: str,
+    chain_id: str,
+) -> None:
+    created = datetime.now().isoformat(timespec="seconds")
+    with tsv_file.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, delimiter="\t")
+        writer.writerow(["query_residue", "partner_residue", "pae"])
+        for residue_a, residue_b, pae_value in rows:
+            writer.writerow(
+                [
+                    residue_a,
+                    residue_b,
+                    "" if pae_value is None else f"{pae_value:.3f}",
+                ]
+            )
+
+    lines = [
+        f"AlphaFold contact report: {pair_label}",
+        f"Generated: {created}",
+        f"Model: {model_spec}",
+        f"Contact chain: /{chain_id}",
+        "",
+        "What this file contains",
+        "This report lists inter-chain contacts produced by ChimeraX's "
+        "'alphafold contacts' command for the active model. The query residue "
+        "is on the selected contact chain; the partner residue is on another "
+        "chain. Lower PAE values indicate a more confident relative placement.",
+        "",
+        f"Contact count: {len(rows)}",
+        "",
+        "Contacts",
+        "query_residue\tpartner_residue\tpae",
+    ]
+    for residue_a, residue_b, pae_value in rows:
+        formatted = "not reported" if pae_value is None else f"{pae_value:.3f}"
+        lines.append(f"{residue_a}\t{residue_b}\t{formatted}")
+    if not rows:
+        lines.append("(none)")
+    report_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _info_residue_tokens(info_file: Path) -> Tuple[str, ...]:
+    try:
+        text = info_file.read_text(encoding="utf-8")
+    except OSError:
+        return ()
+    tokens = []
+    seen = set()
+    for match in re.finditer(r"\bresidue\s+id\s+(\S+)", text):
+        token = match.group(1)
+        if token.startswith("/") and ":" in token and token not in seen:
+            seen.add(token)
+            tokens.append(token)
+    return tuple(tokens)
+
+
+def _write_interface_report(
+    residue_tokens: Tuple[str, ...],
+    report_file: Path,
+    *,
+    pair_label: str,
+    model_spec: str,
+    chain_id: str,
+) -> None:
+    created = datetime.now().isoformat(timespec="seconds")
+    by_chain: Dict[str, List[str]] = {}
+    for token in residue_tokens:
+        chain, residue = _split_residue_token(token)
+        by_chain.setdefault(chain, []).append(residue)
+
+    lines = [
+        f"Interface residue report: {pair_label}",
+        f"Generated: {created}",
+        f"Model: {model_spec}",
+        f"Contact chain: /{chain_id}",
+        "",
+        "What this file contains",
+        "This report lists the residue-level interface selected by ChimeraX's "
+        "'interfaces select' command for the active model. The bundle converts "
+        "that result into a residue-level named selection so full amino-acid "
+        "residues can be displayed, rather than isolated contacting atoms.",
+        "",
+        f"Interface residue count: {len(residue_tokens)}",
+        "",
+        "Residues by chain",
+    ]
+    if by_chain:
+        for chain in sorted(by_chain):
+            residues = ", ".join(by_chain[chain])
+            lines.append(f"/{chain}: {residues}")
+    else:
+        lines.append("(none)")
+    lines.extend(["", "Residue tokens", "residue"])
+    lines.extend(residue_tokens or ["(none)"])
+    report_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _split_residue_token(token: str) -> Tuple[str, str]:
+    match = re.match(r"/([^:]+):(.+)$", token)
+    if not match:
+        return "?", token
+    return match.group(1), match.group(2)
 
 
 def highlight_pae_residues(plot, residues) -> None:

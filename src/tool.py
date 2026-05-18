@@ -121,10 +121,6 @@ class AFPredictionLauncher(ToolInstance):
         scan_button.clicked.connect(self._refresh_preview)
         button_row.addWidget(scan_button)
 
-        choose_button = QPushButton("Choose Folder", parent)
-        choose_button.clicked.connect(self._choose_directory)
-        button_row.addWidget(choose_button)
-
         run_button = QPushButton("Run", parent)
         run_button.clicked.connect(self._run_analysis)
         button_row.addWidget(run_button)
@@ -260,7 +256,7 @@ class AFDisplayController(ToolInstance):
         self._pair_menu.currentIndexChanged.connect(self._set_pair_index)
         layout.addWidget(self._pair_menu)
 
-        chain_pair_label = QLabel("PAE chain-pair filter", parent)
+        chain_pair_label = QLabel("PAE chain pair", parent)
         chain_pair_label.setToolTip(
             "Choose which chain pair is used by the inter-chain PAE cutoff. "
             "All pairs means a residue is highlighted if it has a confident "
@@ -279,7 +275,7 @@ class AFDisplayController(ToolInstance):
 
         slider_row = QHBoxLayout()
         layout.addLayout(slider_row)
-        slider_row.addWidget(QLabel("Pair", parent))
+        slider_row.addWidget(QLabel("Model/PAE", parent))
         self._pair_slider = QSlider(Qt.Horizontal, parent)
         self._pair_slider.setMinimum(0)
         self._pair_slider.setMaximum(0)
@@ -307,7 +303,7 @@ class AFDisplayController(ToolInstance):
 
         pae_cutoff_row = QHBoxLayout()
         layout.addLayout(pae_cutoff_row)
-        cutoff_label = QLabel("Inter-chain PAE cutoff", parent)
+        cutoff_label = QLabel("PAE cutoff", parent)
         cutoff_label.setToolTip(
             "Live-highlight residues whose best PAE to the selected partner "
             "chain(s) is below this value. Smaller values are more stringent."
@@ -343,6 +339,17 @@ class AFDisplayController(ToolInstance):
         show_all_pae_button = QPushButton("Show All", parent)
         show_all_pae_button.clicked.connect(self._show_all_current_model)
         pae_action_row.addWidget(show_all_pae_button)
+
+        analysis_row = QHBoxLayout()
+        layout.addLayout(analysis_row)
+        run_contacts_button = QPushButton("Run Contacts/Interfaces", parent)
+        run_contacts_button.setToolTip(
+            "Run ChimeraX alphafold contacts and interfaces for the active "
+            "model only, then write formatted reports to the active output folder."
+        )
+        run_contacts_button.clicked.connect(self._run_contacts_interfaces)
+        analysis_row.addWidget(run_contacts_button)
+        analysis_row.addStretch(1)
 
         save_row = QHBoxLayout()
         layout.addLayout(save_row)
@@ -405,6 +412,7 @@ class AFDisplayController(ToolInstance):
             "label": self._unique_run_label(result),
             "output_dir": result.output_dir,
             "input_directory": result.input_directory,
+            "requested_chain": result.requested_chain,
             "model_group": result.model_group,
             "pae_plot": None,
             "pairs": list(result.display_pairs),
@@ -650,6 +658,23 @@ class AFDisplayController(ToolInstance):
         )
         if mode != "show_all":
             self._preview_low_pae_residues()
+        self._set_status(message)
+        self.session.logger.info(message)
+
+    def _run_contacts_interfaces(self):
+        from .workflow import run_contacts_interfaces_for_pair
+
+        run = self._current_run()
+        pair = self._current_pair()
+        if run is None or pair is None:
+            raise UserError("No active AF prediction run is available.")
+        message = run_contacts_interfaces_for_pair(
+            self.session,
+            pair,
+            run["output_dir"],
+            requested_chain=run.get("requested_chain"),
+        )
+        self._preview_low_pae_residues()
         self._set_status(message)
         self.session.logger.info(message)
 

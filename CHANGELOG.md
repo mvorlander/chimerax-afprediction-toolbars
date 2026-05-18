@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.6
+
+- Removed the duplicate launcher `Choose Folder` button; the folder row now has
+  the single `Browse...` picker.
+- Stopped running `alphafold contacts` and `interfaces` automatically when
+  opening all predictions. The controller now runs contacts/interfaces only for
+  the active model on demand.
+- Added formatted contact and interface reports alongside raw ChimeraX output.
+- Changed interface display to residue-level selections shown as full sticks
+  on top of cartoon, instead of the raw atom-level selection.
+- Renamed controller labels for clearer model/PAE and PAE cutoff controls.
+
 ## 1.3.5
 
 - Rearranged inter-chain PAE controls so the cutoff slider has its own row.
