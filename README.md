@@ -1,12 +1,17 @@
 # ChimeraX AF Prediction Toolbars
 
+
 ## Quickstart
 
+![alt text](screenshots/Annotated_screenshot.png)
+This bundle facilitates the analysis of alphafold (multimer) predictions by processing input folders and automatically associating PAE plots to predicted structures. Selection via numeric cutoffs helps to focus on the confident predictions and avoiding spaghetting monsters
+
+## Installation 
 Use one install method only.
 
-Recommended wheel install:
+### Recommended wheel install:
 
-1. Download the latest `.whl` from:
+1. Download the latest `.whl` from the "assets" tab under:
    https://github.com/mvorlander/chimerax-afprediction-toolbars/releases/latest
 2. Open ChimeraX.
 3. Run this in the ChimeraX command line, replacing the path with your downloaded
@@ -19,7 +24,9 @@ toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.13-py3-none-any.whl
 4. Restart ChimeraX.
 5. Open the `AF` toolbar tab.
 
-Alternative source install:
+<details>
+
+  <summary>Alternative installation method</summary>
 
 ```bash
 git clone https://github.com/mvorlander/chimerax-afprediction-toolbars.git
@@ -28,6 +35,9 @@ python3 install_chimerax_bundle.py
 ```
 
 Restart ChimeraX after installing from source.
+
+<details>
+
 
 This bundle adds a small `AF` toolbar tab to ChimeraX with five actions:
 
@@ -44,10 +54,7 @@ AF2/AF3 runs open a dedicated `AF Model/PAE Slider` controller. The controller
 has a prediction-run drop-down and a pair slider. The drop-down chooses which
 folder/run is active, and the slider switches the displayed structure and the
 displayed PAE matrix together. Each run uses one PAE plot tool and updates the
-plot data when the slider changes, so docked PAE windows are not resized by
-model changes. PAE plots are opened with `Dragging box colors structure`
-disabled by default, and they remain normal ChimeraX tools that can be docked or
-floated by the user.
+plot data when the slider changes. 
 
 For AF3 all-hit runs, the bundle displays metadata-based confidence scores in
 the model selector when ranking metadata is available. Models with confidence
@@ -115,184 +122,6 @@ The missense panel fetches AlphaMissense scores directly for a human UniProt
 accession or entry name, associates them with the selected target chain, colors
 the chain by the average AlphaMissense score, and closes the temporary score set.
 
-## Installation
-
-These instructions assume you already have ChimeraX installed.
-
-Choose one installation option only:
-
-- **Option A, recommended:** install the release wheel.
-- **Option B, alternative:** install from source with `git clone` and Python.
-
-Do not run both options for the same install. Use Option B only if you want to
-test unreleased changes, modify the bundle, or build the wheel yourself.
-
-### Option A: install the release wheel
-
-This is the preferred installation method for most users. It does not require
-Git, a source checkout, or running Python yourself.
-
-1. Download the latest `.whl` file from the GitHub release page:
-   https://github.com/mvorlander/chimerax-afprediction-toolbars/releases/latest
-2. Start ChimeraX.
-3. In the ChimeraX command line, run `toolshed install` followed by the path to
-   the downloaded wheel:
-
-```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.13-py3-none-any.whl
-```
-
-On Windows this looks like:
-
-```text
-toolshed install C:\Users\yourname\Downloads\ChimeraX_AFPredictionToolbars-1.3.13-py3-none-any.whl
-```
-
-On macOS this looks like:
-
-```text
-toolshed install /Users/yourname/Downloads/ChimeraX_AFPredictionToolbars-1.3.13-py3-none-any.whl
-```
-
-4. Restart ChimeraX.
-
-More detailed wheel instructions are in `INSTALL_WHEEL.md`.
-
-### If you have an older AF toolbar bundle
-
-If you previously installed one of the older AF toolbar bundles, uninstall it
-first to avoid duplicate `AF` toolbar buttons. In the ChimeraX command line,
-run:
-
-```text
-toolshed list installed
-```
-
-Look for any of these bundle names:
-
-```text
-AFToolbar
-AF3Toolbar
-AFPredictionToolbars
-```
-
-To remove the older bundle versions, run the matching uninstall command in
-ChimeraX:
-
-```text
-toolshed uninstall AFToolbar forceRemove true
-toolshed uninstall AF3Toolbar forceRemove true
-```
-
-If you also want to remove this newer bundle completely, run:
-
-```text
-toolshed uninstall AFPredictionToolbars forceRemove true
-```
-
-Restart ChimeraX after uninstalling bundles. ChimeraX usually shows bundle names
-without the `ChimeraX-` prefix, so `ChimeraX-AFPredictionToolbars` appears as
-`AFPredictionToolbars` in `toolshed list installed`.
-
-From a terminal, the same uninstall can be run through ChimeraX:
-
-```bash
-ChimeraX --nogui --exit --cmd "toolshed uninstall AFToolbar forceRemove true ; toolshed uninstall AF3Toolbar forceRemove true ; exit"
-```
-
-If `ChimeraX` is not on your `PATH`, replace it with the full executable path,
-for example on macOS:
-
-```bash
-/Applications/ChimeraX.app/Contents/MacOS/ChimeraX --nogui --exit --cmd "toolshed uninstall AFToolbar forceRemove true ; toolshed uninstall AF3Toolbar forceRemove true ; exit"
-```
-
-### Confirm the install
-
-Restart ChimeraX and check the toolbar. The `AF` tab should contain:
-
-```text
-AF3 > All Hits
-AF3 > Top Hit
-AF2 > All Hits
-AF2 > Top Hit
-Annotate > Missense
-```
-
-You can also confirm from the ChimeraX command line:
-
-```text
-toolshed list installed
-```
-
-The installed bundle should appear as:
-
-```text
-AFPredictionToolbars
-```
-
-### Upgrade
-
-Download the newer release `.whl`, then install it in ChimeraX with `reinstall
-true`:
-
-```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.13-py3-none-any.whl reinstall true
-```
-
-Restart ChimeraX after upgrading. ChimeraX only loads bundle Python code at
-startup.
-
-### Full removal
-
-To remove this bundle from ChimeraX:
-
-```text
-toolshed uninstall AFPredictionToolbars forceRemove true
-```
-
-Then restart ChimeraX.
-
-### Option B: install from source
-
-This is an alternative to Option A, not an extra step after installing the wheel.
-Use it only if you want to test unreleased changes, modify the bundle, or build
-the wheel yourself.
-
-Clone the repository:
-
-```bash
-git clone https://github.com/mvorlander/chimerax-afprediction-toolbars.git
-cd chimerax-afprediction-toolbars
-```
-
-Then install from the source checkout:
-
-```bash
-python3 install_chimerax_bundle.py
-```
-
-If ChimeraX is not auto-detected:
-
-```bash
-python3 install_chimerax_bundle.py --chimerax "/path/to/ChimeraX"
-```
-
-The source installer auto-detects ChimeraX on macOS, Windows, and Linux, removes
-stale local build artifacts, builds a wheel, and installs it with ChimeraX's
-`devel install` command.
-
-Double-click source installer fallback:
-
-- On macOS, double-click `install.command`.
-- On Windows, double-click `install_windows.bat`.
-- More detailed click-by-click instructions are in `INSTALL_NO_TERMINAL.md`.
-
-To run the source-level smoke test before installing:
-
-```bash
-python3 tests/smoke_test_discovery.py
-```
 
 ## Expected Input
 
@@ -340,7 +169,7 @@ Their filenames include timestamps only when the display controller's
 Every run also writes:
 
 ```text
-analysis_summary.json
+analysis_summary.json   
 analysis_summary.txt
 ```
 
