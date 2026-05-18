@@ -606,14 +606,27 @@ def _run_contact_workflow(
     structure_spec = model_spec or "last-opened"
     chain_spec = f"{structure_spec}&/{chain_id}"
     contact_pseudobond_name = f"af_contacts_{label}"
-    contact_raw_file = output_dir / f"af_contacts_{label}_raw.txt" if write_files else None
+    contact_raw_file = (
+        output_dir / "raw" / "af_contacts" / f"af_contacts_{label}_raw.txt"
+        if write_files
+        else None
+    )
     contact_tsv_file = output_dir / f"af_contacts_{label}.tsv" if write_files else None
     contact_report_file = output_dir / f"af_contacts_{label}.txt" if write_files else None
     contact_residue_name = _contact_residue_name(pair_label)
     interface_name = f"interface_residues_{label}"
-    interface_raw_file = output_dir / f"interface_residues_{label}_raw.txt" if write_files else None
+    interface_raw_file = (
+        output_dir
+        / "raw"
+        / "interface_residues"
+        / f"interface_residues_{label}_raw.txt"
+        if write_files
+        else None
+    )
     interface_report_file = output_dir / f"interface_residues_{label}.txt" if write_files else None
     if write_files:
+        contact_raw_file.parent.mkdir(parents=True, exist_ok=True)
+        interface_raw_file.parent.mkdir(parents=True, exist_ok=True)
         for path in (
             contact_raw_file,
             contact_tsv_file,
@@ -656,12 +669,6 @@ def _run_contact_workflow(
     )
 
     commands = [
-        "select " + structure_spec + "&pbonds",
-        (
-            'label sel pseudobonds text '
-            '"{0.atoms[0].residue.name} {0.atoms[0].residue.number} to '
-            '{0.atoms[1].residue.name} {0.atoms[1].residue.number}"'
-        ),
         "interfaces select "
         + chain_spec
         + " contacting "
@@ -703,6 +710,7 @@ def _run_contact_workflow(
         run(session, "style " + interface_name + " stick")
     if contact_residues_named:
         _show_contact_sidechains(session, contact_residue_name)
+        _label_contact_residues(session, structure_model, contact_residues)
 
     return {
         "contact_residue_name": contact_residue_name if contact_residues_named else None,
@@ -1055,6 +1063,68 @@ def _show_contact_sidechains(session, contact_residue_name: str) -> None:
     run(session, f"show {contact_residue_name}&sidechain atoms")
     run(session, f"show {contact_residue_name}&sidechain bonds")
     run(session, f"style {contact_residue_name}&sidechain stick")
+
+
+def _label_contact_residues(session, structure_model, residues) -> None:
+    if residues is None or len(residues) == 0:
+        return
+    try:
+        from chimerax.core.objects import Objects
+        from chimerax.label.label3d import label, labels_model
+
+        label(
+            session,
+            Objects(atoms=residues.atoms),
+            object_type="residues",
+            bg_color="none",
+            position="primary atom",
+        )
+        label_model = labels_model(structure_model)
+        if label_model is None:
+            return
+        for label_object in label_model.labels(residues):
+            label_object.color = _residue_display_color(label_object.residue)
+        label_model.update_labels()
+    except Exception as err:
+        session.logger.warning(f"Could not label AF contact residues: {err}")
+
+
+def _residue_display_color(residue) -> Tuple[int, int, int, int]:
+    for attr_name in ("ribbon_color", "ring_color"):
+        color = getattr(residue, attr_name, None)
+        rgba = _normalize_rgba8(color)
+        if rgba is not None:
+            return rgba
+    try:
+        atom = residue.principal_atom
+        rgba = _normalize_rgba8(getattr(atom, "color", None))
+        if rgba is not None:
+            return rgba
+    except Exception:
+        pass
+    try:
+        atoms = residue.atoms
+        if len(atoms) > 0:
+            rgba = _normalize_rgba8(atoms.colors[0])
+            if rgba is not None:
+                return rgba
+    except Exception:
+        pass
+    return (255, 255, 255, 255)
+
+
+def _normalize_rgba8(color) -> Optional[Tuple[int, int, int, int]]:
+    if color is None:
+        return None
+    try:
+        values = [int(component) for component in color]
+    except Exception:
+        return None
+    if len(values) == 3:
+        values.append(255)
+    if len(values) != 4:
+        return None
+    return tuple(max(0, min(255, value)) for value in values)
 
 
 def _contact_residue_tokens(contact_file: Path) -> Tuple[str, ...]:

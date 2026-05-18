@@ -13,7 +13,7 @@ Recommended wheel install:
    wheel:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.7-py3-none-any.whl
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.8-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -121,19 +121,19 @@ Git, a source checkout, or running Python yourself.
    the downloaded wheel:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.7-py3-none-any.whl
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.8-py3-none-any.whl
 ```
 
 On Windows this looks like:
 
 ```text
-toolshed install C:\Users\yourname\Downloads\ChimeraX_AFPredictionToolbars-1.3.7-py3-none-any.whl
+toolshed install C:\Users\yourname\Downloads\ChimeraX_AFPredictionToolbars-1.3.8-py3-none-any.whl
 ```
 
 On macOS this looks like:
 
 ```text
-toolshed install /Users/yourname/Downloads/ChimeraX_AFPredictionToolbars-1.3.7-py3-none-any.whl
+toolshed install /Users/yourname/Downloads/ChimeraX_AFPredictionToolbars-1.3.8-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -219,7 +219,7 @@ Download the newer release `.whl`, then install it in ChimeraX with `reinstall
 true`:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.7-py3-none-any.whl reinstall true
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.8-py3-none-any.whl reinstall true
 ```
 
 Restart ChimeraX after upgrading. ChimeraX only loads bundle Python code at
@@ -310,6 +310,9 @@ are written under:
 ```text
 <prediction folder>/analysis/<filter-or-folder-name>/<mode>/
 ```
+
+Formatted reports stay directly in that folder. Raw ChimeraX command output is
+kept separately under `raw/af_contacts/` and `raw/interface_residues/`.
 
 Saved PNG and ChimeraX session files are also written to the active mode folder.
 Their filenames include timestamps only when the display controller's

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.8
+
+- Replaced combined pseudobond labels such as `X to Y` with separate residue
+  endpoint labels for AlphaFold contact residues.
+- Set contact residue label colors from the displayed residue color when
+  possible.
+- Moved raw ChimeraX contact/interface command output into `raw/af_contacts/`
+  and `raw/interface_residues/` subfolders, leaving formatted reports in the
+  main output folder.
+
 ## 1.3.7
 
 - Prepare AlphaFold contacts and interface selections for display when models
