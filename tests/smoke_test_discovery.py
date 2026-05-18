@@ -42,6 +42,12 @@ def _assert_labels(pairs, expected) -> None:
         raise AssertionError(f"expected labels {expected!r}, got {labels!r}")
 
 
+def _assert_scores(pairs, expected) -> None:
+    scores = [pair.confidence_score for pair in pairs]
+    if scores != expected:
+        raise AssertionError(f"expected scores {expected!r}, got {scores!r}")
+
+
 def main() -> int:
     _install_chimerax_stubs()
 
@@ -69,6 +75,23 @@ def main() -> int:
             ["model_0", "model_1", "model_2"],
         )
         _assert_labels(workflow._pairs_for_mode(af3, "af3-top", ""), ["model_0"])
+
+        af3_scored = root / "fold_2026_05_13_scored"
+        for model_id, score in ((0, 0.63), (1, 0.91), (2, 0.72)):
+            _write(af3_scored / f"fold_test_model_{model_id}.cif", "data_test\n")
+            _write(
+                af3_scored / f"fold_test_full_data_{model_id}.json",
+                json.dumps({"pae": [[0, 1], [1, 0]]}),
+            )
+            _write(
+                af3_scored / f"fold_test_summary_confidences_{model_id}.json",
+                json.dumps({"ranking_score": score}),
+            )
+
+        scored_all = workflow._pairs_for_mode(af3_scored, "af3-all", "")
+        _assert_labels(scored_all, ["model_1", "model_2", "model_0"])
+        _assert_scores(scored_all, [0.91, 0.72, 0.63])
+        _assert_labels(workflow._pairs_for_mode(af3_scored, "af3-top", ""), ["model_1"])
 
         af2 = root / "af2_test"
         for rank in (1, 2, 3):

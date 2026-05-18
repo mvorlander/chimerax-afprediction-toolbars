@@ -331,6 +331,9 @@ class AFDisplayController(ToolInstance):
         copy_output_button = QPushButton("Copy Output Path", parent)
         copy_output_button.clicked.connect(self._copy_output_path)
         manage_row.addWidget(copy_output_button)
+        reset_display_button = QPushButton("Reset Display", parent)
+        reset_display_button.clicked.connect(self._reset_active_run_display)
+        manage_row.addWidget(reset_display_button)
         close_run_button = QPushButton("Close Run", parent)
         close_run_button.clicked.connect(self._close_current_run)
         manage_row.addWidget(close_run_button)
@@ -414,7 +417,7 @@ class AFDisplayController(ToolInstance):
         pairs = self._current_pairs()
         self._pair_menu.blockSignals(True)
         self._pair_menu.clear()
-        self._pair_menu.addItems([str(pair["label"]) for pair in pairs])
+        self._pair_menu.addItems([_display_pair_label(pair) for pair in pairs])
         self._pair_menu.setCurrentIndex(self._current_pair_index if pairs else -1)
         self._pair_menu.blockSignals(False)
         self._pair_slider.blockSignals(True)
@@ -481,7 +484,7 @@ class AFDisplayController(ToolInstance):
                 plot.display(active_run)
 
         self._current_label.setText(
-            f"Current view: {run['label']} / {current_pair['label']} "
+            f"Current view: {run['label']} / {_display_pair_label(current_pair)} "
             f"({self._current_pair_index + 1}/{len(pairs)})"
         )
         self._previous_button.setEnabled(len(pairs) > 1)
@@ -635,6 +638,27 @@ class AFDisplayController(ToolInstance):
         QApplication.clipboard().setText(text)
         self._set_status(f"Copied output folder:\n{text}")
 
+    def _reset_active_run_display(self):
+        from .workflow import reset_prediction_display
+
+        run = self._current_run()
+        pairs = self._current_pairs()
+        if run is None or not pairs:
+            raise UserError("No active AF prediction run is available.")
+
+        reset_prediction_display(self.session, pairs)
+        self._show_all.blockSignals(True)
+        self._show_all.setChecked(False)
+        self._show_all.blockSignals(False)
+        self._pae_threshold_entry.setText("20")
+        self._current_pair_index = 0
+        self._populate_pair_menu()
+        self._chain_pair_menu.setCurrentIndex(0)
+        self._apply_visibility()
+        message = f"Reset display for {run['label']}."
+        self._set_status(message)
+        self.session.logger.info(message)
+
     def _close_current_run(self):
         if not self._runs:
             return
@@ -689,6 +713,10 @@ class AFDisplayController(ToolInstance):
 def _plot_closed(plot):
     closed = getattr(plot, "closed", None)
     return bool(closed()) if callable(closed) else False
+
+
+def _display_pair_label(pair):
+    return str(pair.get("display_label") or pair.get("label") or "")
 
 
 class AFMissenseTool(ToolInstance):

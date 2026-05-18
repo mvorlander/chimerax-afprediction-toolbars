@@ -1,7 +1,11 @@
 # Changelog
 
-## Unreleased
+## 1.3.2
 
+- Add a `Reset Display` button that restores the active prediction run to its
+  initial model/PAE display state.
+- Display AF3 metadata confidence scores in the model selector and order AF3
+  all-hit models by descending confidence score when available.
 - Added a monthly GitHub Actions compatibility check for new ChimeraX production
   releases.
 - Moved the README Quickstart section to the top of the document.

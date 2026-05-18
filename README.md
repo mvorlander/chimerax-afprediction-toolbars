@@ -13,7 +13,7 @@ Recommended wheel install:
    wheel:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.1-py3-none-any.whl
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.2-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -49,6 +49,10 @@ model changes. PAE plots are opened with `Dragging box colors structure`
 disabled by default, and they remain normal ChimeraX tools that can be docked or
 floated by the user.
 
+For AF3 all-hit runs, the bundle displays metadata-based confidence scores in
+the model selector when ranking metadata is available. Models with confidence
+scores are ordered from highest to lowest score in the slider.
+
 When several models are opened from one prediction run, the bundle aligns them
 to the first opened model and adds them to one ChimeraX model group in the
 Models panel. Starting another AF2/AF3 run keeps the earlier run loaded; use the
@@ -69,7 +73,9 @@ appended to the filename for the active model/pair, and the `Timestamp` checkbox
 controls whether saved PNG/session filenames include a timestamp.
 `Copy Output Path` copies the active output folder to the clipboard. `Close Run`
 closes the active run's models and PAE plot without disturbing other loaded
-runs.
+runs. `Reset Display` restores the active run to its initial slider/display
+state: first model selected, one model visible, all chain pairs selected, PAE
+threshold reset to 20, and cartoon-only model display.
 
 The missense panel fetches AlphaMissense scores directly for a human UniProt
 accession or entry name, associates them with the selected target chain, colors
@@ -99,19 +105,19 @@ Git, a source checkout, or running Python yourself.
    the downloaded wheel:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.1-py3-none-any.whl
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.2-py3-none-any.whl
 ```
 
 On Windows this looks like:
 
 ```text
-toolshed install C:\Users\yourname\Downloads\ChimeraX_AFPredictionToolbars-1.3.1-py3-none-any.whl
+toolshed install C:\Users\yourname\Downloads\ChimeraX_AFPredictionToolbars-1.3.2-py3-none-any.whl
 ```
 
 On macOS this looks like:
 
 ```text
-toolshed install /Users/yourname/Downloads/ChimeraX_AFPredictionToolbars-1.3.1-py3-none-any.whl
+toolshed install /Users/yourname/Downloads/ChimeraX_AFPredictionToolbars-1.3.2-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -197,7 +203,7 @@ Download the newer release `.whl`, then install it in ChimeraX with `reinstall
 true`:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.1-py3-none-any.whl reinstall true
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.2-py3-none-any.whl reinstall true
 ```
 
 Restart ChimeraX after upgrading. ChimeraX only loads bundle Python code at

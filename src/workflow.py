@@ -40,6 +40,7 @@ class PredictionPair:
     label: str
     structure_path: Path
     score_path: Path
+    confidence_score: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -87,13 +88,22 @@ def run_af_prediction_analysis(
         chain_id = _resolve_chain_id(structure_model, requested_chain)
         model_spec = _model_spec(structure_model)
         _run_contact_workflow(session, pair, output_dir, chain_id, model_spec)
-        display_pairs.append({"label": pair.label, "model": structure_model, "pae": pae})
+        display_pairs.append(
+            {
+                "label": pair.label,
+                "display_label": _pair_display_label(pair),
+                "confidence_score": pair.confidence_score,
+                "model": structure_model,
+                "pae": pae,
+            }
+        )
         structures.append(structure_model)
         pair_summaries.append(
             {
                 "label": pair.label,
                 "structure": str(pair.structure_path),
                 "score_data": str(pair.score_path),
+                "confidence_score": pair.confidence_score,
                 "contact_chain": chain_id,
                 "model_spec": model_spec,
             }
@@ -179,24 +189,42 @@ def _discover_af3_pairs(
             "'model_0.cif' and 'full_data_0.json' or 'data_0.json'."
         )
 
+    score_by_label = _af3_score_by_label(directory, prediction_filter)
     pairs = []
     if top_only:
-        labels = [_top_af3_model_label(directory, labels, prediction_filter)]
+        labels = [
+            _top_af3_model_label(
+                directory, labels, prediction_filter, score_by_label=score_by_label
+            )
+        ]
+    elif score_by_label:
+        labels = _af3_labels_by_confidence(labels, score_by_label)
 
     for label in labels:
         structure = _one_file(structures_by_id[label], "AF3 structure", label, directory)
         score = _one_file(scores_by_id[label], "AF3 data JSON", label, directory)
-        pairs.append(PredictionPair(f"model_{label}", structure, score))
+        pairs.append(
+            PredictionPair(
+                f"model_{label}",
+                structure,
+                score,
+                confidence_score=score_by_label.get(label),
+            )
+        )
     return pairs
 
 
 def _top_af3_model_label(
-    directory: Path, labels: List[Union[str, int]], prediction_filter: str
+    directory: Path,
+    labels: List[Union[str, int]],
+    prediction_filter: str,
+    score_by_label: Optional[Dict[Union[str, int], float]] = None,
 ) -> Union[str, int]:
     if "single" in labels and len(labels) == 1:
         return "single"
 
-    score_by_label = _af3_score_by_label(directory, prediction_filter)
+    if score_by_label is None:
+        score_by_label = _af3_score_by_label(directory, prediction_filter)
     if score_by_label:
         missing_scores = sorted(set(labels) - set(score_by_label), key=_natural_key)
         if missing_scores:
@@ -214,6 +242,21 @@ def _top_af3_model_label(
     if numeric:
         return numeric[0]
     return sorted(labels, key=_natural_key)[0]
+
+
+def _af3_labels_by_confidence(
+    labels: List[Union[str, int]], score_by_label: Dict[Union[str, int], float]
+) -> List[Union[str, int]]:
+    ordered_labels = sorted(labels, key=_natural_key)
+    label_order = {label: index for index, label in enumerate(ordered_labels)}
+    return sorted(
+        ordered_labels,
+        key=lambda label: (
+            label not in score_by_label,
+            -score_by_label.get(label, 0.0),
+            label_order[label],
+        ),
+    )
 
 
 def _af3_score_by_label(directory: Path, prediction_filter: str) -> Dict[Union[str, int], float]:
@@ -605,6 +648,7 @@ def _write_analysis_summary(
                 f"- {pair['label']}",
                 f"  structure: {pair['structure']}",
                 f"  data: {pair['score_data']}",
+                f"  confidence score: {_format_confidence(pair.get('confidence_score'))}",
                 f"  contact chain: {pair['contact_chain']}",
                 f"  model spec: {pair['model_spec']}",
             ]
@@ -668,6 +712,18 @@ def apply_interchain_pae_visibility(
         f"{action} {len(residues)} residue(s) with minimum {scope} "
         f"PAE < {max_pae:g}."
     )
+
+
+def reset_prediction_display(session, display_pairs) -> None:
+    for pair in display_pairs:
+        model = pair.get("model")
+        model_spec = _model_spec(model)
+        if model_spec is None:
+            continue
+        for target in ("atoms", "bonds", "pseudobonds", "surfaces"):
+            run(session, f"hide {model_spec} {target}")
+        run(session, f"show {model_spec} cartoons")
+    run(session, "select clear")
 
 
 def save_active_view_png(
@@ -947,10 +1003,22 @@ def _mode_label(mode: str) -> str:
 
 def _format_pair(pair: PredictionPair, root: Path) -> str:
     return (
-        f"{pair.label}\n"
+        f"{_pair_display_label(pair)}\n"
         f"  structure: {_relative(pair.structure_path, root)}\n"
         f"  data:      {_relative(pair.score_path, root)}"
     )
+
+
+def _pair_display_label(pair: PredictionPair) -> str:
+    if pair.confidence_score is None:
+        return pair.label
+    return f"{pair.label} (confidence {_format_confidence(pair.confidence_score)})"
+
+
+def _format_confidence(score) -> str:
+    if score is None:
+        return "not available"
+    return f"{float(score):.4g}"
 
 
 def _relative(path: Path, root: Path) -> str:
