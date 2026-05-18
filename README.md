@@ -13,7 +13,7 @@ Recommended wheel install:
    wheel:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.11-py3-none-any.whl
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.12-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -58,18 +58,25 @@ to the first opened model and adds them to one ChimeraX model group in the
 Models panel. Starting another AF2/AF3 run keeps the earlier run loaded; use the
 controller drop-down to switch which run's models and PAEs are displayed.
 
-The controller also includes inter-chain PAE controls. Choose `All inter-chain
-pairs` or a specific `PAE chain pair`, then use the `PAE cutoff` slider to find
-residues by their minimum PAE to the selected partner chain(s). The default
-threshold is 10, and smaller values are more stringent. Moving the slider
-live-selects matching residues. The PAE overlay marks only the below-cutoff
-inter-chain cells that caused those residues to pass the filter, rather than
-full rows and columns. `Hide Unselected` hides atoms, pseudobonds, cartoons, and
-surfaces outside the current cutoff filter while preserving the current display
-style of matching residues. Bond display flags are kept normal so later ChimeraX
-`show` commands do not reveal isolated atoms. `Show Only` hides the rest of the
-current model and shows cartoons only for those residues, while `Show All`
-restores a cartoon-only display for the current model.
+The controller also includes a `Selection by prediction confidence` section.
+For multimer contacts, choose `All inter-chain pairs` or a specific `PAE chain
+pair`, then use the `PAE cutoff` slider to find residues by their minimum PAE to
+the selected partner chain(s). The default threshold is 10, and smaller values
+are more stringent. Moving the slider live-selects matching residues. The PAE
+overlay marks only the below-cutoff inter-chain cells that caused those residues
+to pass the filter, rather than full rows and columns.
+
+For monomeric predictions or local chain-confidence filtering, use the `pLDDT
+cutoff` slider in the same section. It selects residues with pLDDT at or above
+the cutoff; the default is 70, and larger values are more stringent. Its live
+selection is off by default so it does not override the PAE live selection.
+
+`Hide Unselected` hides atoms, pseudobonds, cartoons, and surfaces outside the
+current cutoff filter while preserving the current display style of matching
+residues. Bond display flags are kept normal so later ChimeraX `show` commands
+do not reveal isolated atoms. `Show Only` hides the rest of the current model
+and shows cartoons only for those residues, while `Show All` restores a
+cartoon-only display for the current model.
 
 The `PAE chain pair` menu does not change which model is displayed. It only
 controls which chain pair is considered by the inter-chain PAE cutoff. For
@@ -98,9 +105,10 @@ controls whether saved PNG/session filenames include a timestamp.
 closes the active run's models and PAE plot without disturbing other loaded
 runs. `Reset Active Run` restores the active run to its initial slider/display
 state: first model selected, one model visible, all chain pairs selected, PAE
-threshold reset to 10, AF contacts max PAE reset to 30, cartoon-only model
-display, and prepared contact side chains shown. Longer active-run path details
-are kept in the collapsed `Run details` panel to keep the controller compact.
+threshold reset to 10, pLDDT cutoff reset to 70, AF contacts max PAE reset to
+30, cartoon-only model display, and prepared contact side chains shown. Longer
+active-run path details are kept in the collapsed `Run details` panel to keep
+the controller compact.
 
 The missense panel fetches AlphaMissense scores directly for a human UniProt
 accession or entry name, associates them with the selected target chain, colors
@@ -130,19 +138,19 @@ Git, a source checkout, or running Python yourself.
    the downloaded wheel:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.11-py3-none-any.whl
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.12-py3-none-any.whl
 ```
 
 On Windows this looks like:
 
 ```text
-toolshed install C:\Users\yourname\Downloads\ChimeraX_AFPredictionToolbars-1.3.11-py3-none-any.whl
+toolshed install C:\Users\yourname\Downloads\ChimeraX_AFPredictionToolbars-1.3.12-py3-none-any.whl
 ```
 
 On macOS this looks like:
 
 ```text
-toolshed install /Users/yourname/Downloads/ChimeraX_AFPredictionToolbars-1.3.11-py3-none-any.whl
+toolshed install /Users/yourname/Downloads/ChimeraX_AFPredictionToolbars-1.3.12-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -228,7 +236,7 @@ Download the newer release `.whl`, then install it in ChimeraX with `reinstall
 true`:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.11-py3-none-any.whl reinstall true
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.12-py3-none-any.whl reinstall true
 ```
 
 Restart ChimeraX after upgrading. ChimeraX only loads bundle Python code at

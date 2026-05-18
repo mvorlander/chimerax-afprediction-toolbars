@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.12
+
+- Renamed the confidence-selection section to `Selection by prediction
+  confidence` and kept the section headers visibly bold.
+- Added a pLDDT confidence selector for monomeric predictions and local
+  confidence filtering. It supports cutoff-based live selection, hide
+  unselected, show only, and show all actions.
+- Added pLDDT cutoff state to the display controller status/details and reset
+  path.
+
 ## 1.3.11
 
 - Preserved normal bond display flags in AF display actions so a later bare

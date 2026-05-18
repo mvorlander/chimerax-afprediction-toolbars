@@ -956,6 +956,63 @@ def preview_interchain_pae_residues(
     return residues, f"Previewing {len(residues)} residue(s) with minimum {scope} PAE < {max_pae:g}."
 
 
+def apply_plddt_visibility(
+    session,
+    structure_model,
+    min_plddt: float,
+    mode: str,
+) -> str:
+    model_spec = _model_spec(structure_model)
+    if structure_model is None or model_spec is None:
+        raise UserError("No active structure model is available for pLDDT selection.")
+
+    _restore_bond_displays(structure_model)
+    if mode == "show_all":
+        for target in ("atoms", "pseudobonds", "surfaces"):
+            run(session, f"hide {model_spec} {target}")
+        run(session, f"show {model_spec} cartoons")
+        return f"Restored cartoon-only display for {structure_model}."
+
+    residues = _residues_with_plddt_at_or_above(structure_model, min_plddt)
+    if not residues:
+        return f"No residues with pLDDT >= {min_plddt:g} were found."
+
+    from chimerax.atomic import concise_residue_spec
+
+    residue_spec = concise_residue_spec(session, residues)
+    _select_residues(session, residues)
+    if mode == "select":
+        return f"Selected {len(residues)} residue(s) with pLDDT >= {min_plddt:g}."
+    elif mode == "hide_unselected":
+        selection_name = _plddt_filter_residue_name(structure_model)
+        _name_residues_from_residues(session, residues, selection_name)
+        outside_spec = f"{model_spec}&~{selection_name}"
+        for target in ("atoms", "pseudobonds", "cartoons", "surfaces"):
+            run(session, f"hide {outside_spec} {target}")
+        action = "Hid residues outside"
+    elif mode == "show_only":
+        for target in ("atoms", "pseudobonds", "cartoons", "surfaces"):
+            run(session, f"hide {model_spec} {target}")
+        run(session, f"show {residue_spec} cartoons")
+        action = "Showing only"
+    else:
+        raise UserError(f"Unknown pLDDT visibility mode: {mode}")
+
+    return f"{action} {len(residues)} residue(s) with pLDDT >= {min_plddt:g}."
+
+
+def preview_plddt_residues(
+    session,
+    structure_model,
+    min_plddt: float,
+    select: bool = True,
+):
+    residues = _residues_with_plddt_at_or_above(structure_model, min_plddt)
+    if select:
+        _select_residues(session, residues)
+    return residues, f"Previewing {len(residues)} residue(s) with pLDDT >= {min_plddt:g}."
+
+
 def reset_prediction_display(session, display_pairs) -> None:
     for pair in display_pairs:
         model = pair.get("model")
@@ -1083,6 +1140,13 @@ def _pae_filter_residue_name(structure_model) -> str:
         structure_model, "name", "model"
     )
     return f"pae_filter_residues_{_safe_token(str(model_id))}"
+
+
+def _plddt_filter_residue_name(structure_model) -> str:
+    model_id = getattr(structure_model, "id_string", None) or getattr(
+        structure_model, "name", "model"
+    )
+    return f"plddt_filter_residues_{_safe_token(str(model_id))}"
 
 
 def _name_contact_residues_from_file(
@@ -1513,6 +1577,43 @@ def chain_pair_options(structure_model) -> Tuple[Tuple[str, str], ...]:
         for chain_b in chain_ids[index + 1 :]:
             pairs.append((chain_a, chain_b))
     return tuple(pairs)
+
+
+def _residues_with_plddt_at_or_above(structure_model, min_plddt: float):
+    if structure_model is None or getattr(structure_model, "deleted", False):
+        return []
+    residues = []
+    for residue in getattr(structure_model, "residues", []):
+        value = _residue_plddt(residue)
+        if value is not None and value >= min_plddt:
+            residues.append(residue)
+    return residues
+
+
+def _residue_plddt(residue) -> Optional[float]:
+    if residue is None or getattr(residue, "deleted", False):
+        return None
+    try:
+        atom = residue.principal_atom
+        if atom is not None:
+            value = float(atom.bfactor)
+            if value == value:
+                return value
+    except Exception:
+        pass
+    try:
+        atoms = residue.atoms
+        values = [
+            float(atom.bfactor)
+            for atom in atoms
+            if atom is not None and not getattr(atom, "deleted", False)
+        ]
+    except Exception:
+        values = []
+    values = [value for value in values if value == value]
+    if not values:
+        return None
+    return sum(values) / len(values)
 
 
 def _residues_with_min_interchain_pae_below(pae, max_pae: float, chain_pair=None):
