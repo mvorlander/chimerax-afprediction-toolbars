@@ -326,6 +326,14 @@ class AFDisplayController(ToolInstance):
         self._pae_threshold_value_label = QLabel("20", parent)
         self._pae_threshold_value_label.setMinimumWidth(24)
         pae_filter_row.addWidget(self._pae_threshold_value_label)
+        self._live_pae_highlight = QCheckBox("Live PAE highlight", parent)
+        self._live_pae_highlight.setChecked(True)
+        self._live_pae_highlight.setToolTip(
+            "When enabled, moving the cutoff slider live-selects matching "
+            "residues and overlays their rows/columns in the PAE plot."
+        )
+        self._live_pae_highlight.stateChanged.connect(self._live_pae_highlight_changed)
+        pae_filter_row.addWidget(self._live_pae_highlight)
         select_pae_button = QPushButton("Select Highlighted", parent)
         select_pae_button.clicked.connect(self._select_low_pae_residues)
         pae_filter_row.addWidget(select_pae_button)
@@ -593,6 +601,9 @@ class AFDisplayController(ToolInstance):
         self._pae_threshold_value_label.setText(str(value))
         self._preview_low_pae_residues()
 
+    def _live_pae_highlight_changed(self, *_args):
+        self._preview_low_pae_residues()
+
     def _preview_low_pae_residues(self, *_args):
         from .workflow import preview_interchain_pae_residues
 
@@ -603,14 +614,17 @@ class AFDisplayController(ToolInstance):
             self._update_status_strip()
             return
         plot = run.get("pae_plot")
+        live = self._live_pae_highlight.isChecked()
         residues, message = preview_interchain_pae_residues(
             self.session,
             pae,
             self._pae_threshold(),
             chain_pair=self._current_chain_pair(),
             plot=plot,
+            select=live,
+            highlight=live,
         )
-        self._preview_count = len(residues)
+        self._preview_count = len(residues) if live else None
         self._update_status_strip()
 
     def _select_low_pae_residues(self):
@@ -706,6 +720,7 @@ class AFDisplayController(ToolInstance):
         self._pae_threshold_slider.setValue(20)
         self._pae_threshold_value_label.setText("20")
         self._pae_threshold_slider.blockSignals(False)
+        self._live_pae_highlight.setChecked(True)
         self._current_pair_index = 0
         self._populate_pair_menu()
         self._chain_pair_menu.setCurrentIndex(0)
@@ -776,6 +791,8 @@ class AFDisplayController(ToolInstance):
             f"cutoff < {self._pae_threshold():g}",
             f"chain pair: {_chain_pair_label(self._current_chain_pair())}",
         ]
+        if not self._live_pae_highlight.isChecked():
+            parts.append("live highlight off")
         if self._preview_count is not None:
             parts.append(f"highlighted: {self._preview_count}")
         confidence_warning = _confidence_warning(self._current_pairs())

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.4
+
+- Added a `Live PAE highlight` toggle to turn live structure selection and PAE
+  plot overlays on or off while keeping cutoff-based actions available.
+
 ## 1.3.3
 
 - Replaced the inter-chain PAE cutoff text box with a live slider.

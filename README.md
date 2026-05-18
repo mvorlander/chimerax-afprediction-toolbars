@@ -13,7 +13,7 @@ Recommended wheel install:
    wheel:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.3-py3-none-any.whl
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.4-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -71,7 +71,9 @@ controls which chain pair is considered by the inter-chain PAE cutoff. For
 example, `A-B` highlights residues whose best PAE contact is between chains A
 and B; `All inter-chain pairs` checks every pair of different chains. Moving the
 cutoff slider live-selects matching residues in the structure and marks their
-rows/columns in the PAE plot.
+rows/columns in the PAE plot. Turn off `Live PAE highlight` to stop live
+selection and PAE overlays while still using the cutoff for `Select Highlighted`
+and `Show Only`.
 
 Use `Save PNG` to save the current 3D view as a transparent-background PNG in
 the active run's output folder. Use `Save Session` to save a ChimeraX `.cxs`
@@ -112,19 +114,19 @@ Git, a source checkout, or running Python yourself.
    the downloaded wheel:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.3-py3-none-any.whl
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.4-py3-none-any.whl
 ```
 
 On Windows this looks like:
 
 ```text
-toolshed install C:\Users\yourname\Downloads\ChimeraX_AFPredictionToolbars-1.3.3-py3-none-any.whl
+toolshed install C:\Users\yourname\Downloads\ChimeraX_AFPredictionToolbars-1.3.4-py3-none-any.whl
 ```
 
 On macOS this looks like:
 
 ```text
-toolshed install /Users/yourname/Downloads/ChimeraX_AFPredictionToolbars-1.3.3-py3-none-any.whl
+toolshed install /Users/yourname/Downloads/ChimeraX_AFPredictionToolbars-1.3.4-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -210,7 +212,7 @@ Download the newer release `.whl`, then install it in ChimeraX with `reinstall
 true`:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.3-py3-none-any.whl reinstall true
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.4-py3-none-any.whl reinstall true
 ```
 
 Restart ChimeraX after upgrading. ChimeraX only loads bundle Python code at

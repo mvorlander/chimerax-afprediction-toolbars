@@ -746,10 +746,22 @@ def apply_interchain_pae_visibility(
     )
 
 
-def preview_interchain_pae_residues(session, pae, max_pae: float, chain_pair=None, plot=None):
+def preview_interchain_pae_residues(
+    session,
+    pae,
+    max_pae: float,
+    chain_pair=None,
+    plot=None,
+    select: bool = True,
+    highlight: bool = True,
+):
     residues = _residues_with_min_interchain_pae_below(pae, max_pae, chain_pair)
-    _select_residues(session, residues)
-    highlight_pae_residues(plot, residues)
+    if select:
+        _select_residues(session, residues)
+    if highlight:
+        highlight_pae_residues(plot, residues)
+    else:
+        _clear_pae_highlight(plot)
     scope = _chain_pair_scope_label(chain_pair)
     return residues, f"Previewing {len(residues)} residue(s) with minimum {scope} PAE < {max_pae:g}."
 
