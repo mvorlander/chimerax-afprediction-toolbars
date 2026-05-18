@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.9
+
+- Added an `AF contacts max PAE` slider to the display controller so the active
+  model can be rerun with a stricter or looser ChimeraX `alphafold contacts`
+  threshold.
+- Rerunning `Run Contacts/Interfaces` now removes old AF-contact residue labels
+  before relabeling the current contact set.
+- Contact reports now record the AF contacts max PAE threshold used for the
+  rerun.
+
 ## 1.3.8
 
 - Replaced combined pseudobond labels such as `X to Y` with separate residue

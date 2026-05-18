@@ -33,6 +33,7 @@ AF3_SCORE_PATTERNS = [
     ),
 ]
 AF3_SCORE_KEYS = ("ranking_score", "aggregate_score", "rank_score")
+DEFAULT_CONTACT_MAX_PAE = 30.0
 
 
 @dataclass(frozen=True)
@@ -537,6 +538,7 @@ def run_contacts_interfaces_for_pair(
     display_pair: Dict[str, object],
     output_dir: Path,
     requested_chain: Optional[str] = None,
+    max_pae: Optional[float] = DEFAULT_CONTACT_MAX_PAE,
 ) -> str:
     model = display_pair.get("model")
     model_spec = _model_spec(model)
@@ -545,6 +547,8 @@ def run_contacts_interfaces_for_pair(
 
     label = str(display_pair.get("label") or "model")
     chain_id = _resolve_chain_id(model, requested_chain)
+    max_pae = _validate_contact_max_pae(max_pae)
+    _clear_contact_labels(session, display_pair.get("contact_residue_name"))
     result = _run_contact_workflow(
         session,
         label,
@@ -553,13 +557,15 @@ def run_contacts_interfaces_for_pair(
         model_spec,
         model,
         write_files=True,
+        max_pae=max_pae,
     )
     display_pair["contact_residue_name"] = result["contact_residue_name"]
     display_pair["interface_residue_name"] = result["interface_residue_name"]
     display_pair["contact_analysis_files"] = result["files"]
     return (
         f"Ran contacts/interfaces for {label} on chain {chain_id}. "
-        f"Contacts: {result['contact_count']}; interface residues: "
+        f"AF contacts max PAE: {max_pae:g}. Contacts: {result['contact_count']}; "
+        f"interface residues: "
         f"{result['interface_residue_count']}. Files were written to:\n{output_dir}"
     )
 
@@ -580,6 +586,7 @@ def _prepare_contact_interface_display(
             model_spec,
             structure_model,
             write_files=False,
+            max_pae=DEFAULT_CONTACT_MAX_PAE,
         )
     except Exception as err:
         name = getattr(structure_model, "name", pair_label)
@@ -598,7 +605,9 @@ def _run_contact_workflow(
     structure_model,
     *,
     write_files: bool,
+    max_pae: Optional[float],
 ) -> Dict[str, object]:
+    max_pae = _validate_contact_max_pae(max_pae)
     if write_files:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -636,18 +645,24 @@ def _run_contact_workflow(
         ):
             _unlink_if_exists(path)
 
+    contact_command = (
+        "alphafold contacts "
+        + chain_spec
+        + " name "
+        + quote_if_necessary(contact_pseudobond_name)
+        + " maxPae "
+        + f"{max_pae:g}"
+    )
+    if write_files:
+        contact_command += " outputFile " + quote_if_necessary(str(contact_raw_file))
+
     commands = [
         "hide " + structure_spec + " atoms",
         "hide " + structure_spec + " bonds",
         "hide " + structure_spec + " surfaces",
         "show " + structure_spec + " cartoons",
-        "alphafold contacts "
-        + chain_spec
-        + " name "
-        + quote_if_necessary(contact_pseudobond_name),
+        contact_command,
     ]
-    if write_files:
-        commands[-1] += " outputFile " + quote_if_necessary(str(contact_raw_file))
     for command in commands:
         run(session, command)
 
@@ -660,6 +675,7 @@ def _run_contact_workflow(
             pair_label=pair_label,
             model_spec=structure_spec,
             chain_id=chain_id,
+            max_pae=max_pae,
         )
     contact_residues = _contact_residues_from_pseudobonds(
         structure_model, contact_pseudobond_name
@@ -1026,6 +1042,29 @@ def _unlink_if_exists(path: Path) -> None:
         pass
 
 
+def _validate_contact_max_pae(max_pae: Optional[float]) -> float:
+    if max_pae is None:
+        return DEFAULT_CONTACT_MAX_PAE
+    try:
+        value = float(max_pae)
+    except (TypeError, ValueError):
+        raise UserError(f"AF contacts max PAE must be a number, got {max_pae!r}.")
+    if value < 0:
+        raise UserError("AF contacts max PAE must be zero or greater.")
+    return value
+
+
+def _clear_contact_labels(session, contact_residue_name) -> None:
+    if not contact_residue_name:
+        return
+    try:
+        run(session, f"~label {contact_residue_name} residues")
+    except Exception as err:
+        session.logger.warning(
+            f"Could not clear previous AF contact residue labels: {err}"
+        )
+
+
 def _contact_residue_name(pair_label: str) -> str:
     return f"af_contact_residues_{_safe_token(pair_label)}"
 
@@ -1224,6 +1263,7 @@ def _write_contact_reports(
     pair_label: str,
     model_spec: str,
     chain_id: str,
+    max_pae: float,
 ) -> None:
     created = datetime.now().isoformat(timespec="seconds")
     with tsv_file.open("w", encoding="utf-8", newline="") as handle:
@@ -1243,12 +1283,15 @@ def _write_contact_reports(
         f"Generated: {created}",
         f"Model: {model_spec}",
         f"Contact chain: /{chain_id}",
+        f"AF contacts max PAE: {max_pae:g}",
         "",
         "What this file contains",
         "This report lists inter-chain contacts produced by ChimeraX's "
         "'alphafold contacts' command for the active model. The query residue "
         "is on the selected contact chain; the partner residue is on another "
-        "chain. Lower PAE values indicate a more confident relative placement.",
+        "chain. Only contacts with PAE values at or below the AF contacts max "
+        "PAE threshold are included. Lower PAE values indicate a more "
+        "confident relative placement.",
         "",
         f"Contact count: {len(rows)}",
         "",

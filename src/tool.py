@@ -358,14 +358,36 @@ class AFDisplayController(ToolInstance):
 
         analysis_row = QHBoxLayout()
         layout.addLayout(analysis_row)
+        contact_cutoff_label = QLabel("AF contacts max PAE", parent)
+        contact_cutoff_label.setToolTip(
+            "Maximum PAE allowed when rerunning ChimeraX alphafold contacts. "
+            "Lower values make the contact pseudobonds, labels, and written "
+            "contact files more stringent."
+        )
+        analysis_row.addWidget(contact_cutoff_label)
+        self._contact_max_pae_slider = QSlider(Qt.Horizontal, parent)
+        self._contact_max_pae_slider.setMinimum(0)
+        self._contact_max_pae_slider.setMaximum(30)
+        self._contact_max_pae_slider.setSingleStep(1)
+        self._contact_max_pae_slider.setPageStep(5)
+        self._contact_max_pae_slider.setTickInterval(5)
+        self._contact_max_pae_slider.setTickPosition(QSlider.TicksBelow)
+        self._contact_max_pae_slider.setValue(30)
+        self._contact_max_pae_slider.valueChanged.connect(
+            self._contact_max_pae_changed
+        )
+        analysis_row.addWidget(self._contact_max_pae_slider, 1)
+        self._contact_max_pae_value_label = QLabel("30", parent)
+        self._contact_max_pae_value_label.setMinimumWidth(24)
+        analysis_row.addWidget(self._contact_max_pae_value_label)
         run_contacts_button = QPushButton("Run Contacts/Interfaces", parent)
         run_contacts_button.setToolTip(
             "Run ChimeraX alphafold contacts and interfaces for the active "
-            "model only, then write formatted reports to the active output folder."
+            "model only using the selected AF contacts max PAE, then write "
+            "formatted reports to the active output folder."
         )
         run_contacts_button.clicked.connect(self._run_contacts_interfaces)
         analysis_row.addWidget(run_contacts_button)
-        analysis_row.addStretch(1)
 
         save_row = QHBoxLayout()
         layout.addLayout(save_row)
@@ -625,6 +647,15 @@ class AFDisplayController(ToolInstance):
         self._pae_threshold_value_label.setText(str(value))
         self._preview_low_pae_residues()
 
+    def _contact_max_pae(self):
+        return float(self._contact_max_pae_slider.value())
+
+    def _contact_max_pae_changed(self, value):
+        self._contact_max_pae_value_label.setText(str(value))
+        self._set_status(
+            f"AF contacts max PAE set to {value}. Click Run Contacts/Interfaces to rerun."
+        )
+
     def _live_pae_highlight_changed(self, *_args):
         self._preview_low_pae_residues()
 
@@ -689,6 +720,7 @@ class AFDisplayController(ToolInstance):
             pair,
             run["output_dir"],
             requested_chain=run.get("requested_chain"),
+            max_pae=self._contact_max_pae(),
         )
         self._preview_low_pae_residues()
         self._set_status(message)
@@ -758,6 +790,10 @@ class AFDisplayController(ToolInstance):
         self._pae_threshold_slider.setValue(10)
         self._pae_threshold_value_label.setText("10")
         self._pae_threshold_slider.blockSignals(False)
+        self._contact_max_pae_slider.blockSignals(True)
+        self._contact_max_pae_slider.setValue(30)
+        self._contact_max_pae_value_label.setText("30")
+        self._contact_max_pae_slider.blockSignals(False)
         self._live_pae_highlight.setChecked(True)
         self._current_pair_index = 0
         self._populate_pair_menu()

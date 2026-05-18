@@ -13,7 +13,7 @@ Recommended wheel install:
    wheel:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.8-py3-none-any.whl
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.9-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -78,8 +78,12 @@ while still using the cutoff for `Show Only`.
 Opening a prediction run prepares ChimeraX contact/interface display for every
 model, but does not write contact/interface files to disk. Use `Run
 Contacts/Interfaces` when you want to write formatted contact and interface
-reports for the active model to the active run's output folder. Interface
-residues are shown as connected residue sticks on top of the cartoon model.
+reports for the active model to the active run's output folder. The `AF contacts
+max PAE` slider controls how stringent ChimeraX's `alphafold contacts` command
+is for that rerun; lower values keep only more confident contacts. Rerunning
+contacts/interfaces removes old AF-contact residue labels before relabeling the
+current result. Interface residues are shown as connected residue sticks on top
+of the cartoon model.
 
 Use `Save PNG` to save the current 3D view as a transparent-background PNG in
 the active run's output folder. Use `Save Session` to save a ChimeraX `.cxs`
@@ -90,8 +94,8 @@ controls whether saved PNG/session filenames include a timestamp.
 closes the active run's models and PAE plot without disturbing other loaded
 runs. `Reset Active Run` restores the active run to its initial slider/display
 state: first model selected, one model visible, all chain pairs selected, PAE
-threshold reset to 10, cartoon-only model display, and prepared contact side
-chains shown.
+threshold reset to 10, AF contacts max PAE reset to 30, cartoon-only model
+display, and prepared contact side chains shown.
 
 The missense panel fetches AlphaMissense scores directly for a human UniProt
 accession or entry name, associates them with the selected target chain, colors
@@ -121,19 +125,19 @@ Git, a source checkout, or running Python yourself.
    the downloaded wheel:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.8-py3-none-any.whl
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.9-py3-none-any.whl
 ```
 
 On Windows this looks like:
 
 ```text
-toolshed install C:\Users\yourname\Downloads\ChimeraX_AFPredictionToolbars-1.3.8-py3-none-any.whl
+toolshed install C:\Users\yourname\Downloads\ChimeraX_AFPredictionToolbars-1.3.9-py3-none-any.whl
 ```
 
 On macOS this looks like:
 
 ```text
-toolshed install /Users/yourname/Downloads/ChimeraX_AFPredictionToolbars-1.3.8-py3-none-any.whl
+toolshed install /Users/yourname/Downloads/ChimeraX_AFPredictionToolbars-1.3.9-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -219,7 +223,7 @@ Download the newer release `.whl`, then install it in ChimeraX with `reinstall
 true`:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.8-py3-none-any.whl reinstall true
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.9-py3-none-any.whl reinstall true
 ```
 
 Restart ChimeraX after upgrading. ChimeraX only loads bundle Python code at
@@ -312,7 +316,8 @@ are written under:
 ```
 
 Formatted reports stay directly in that folder. Raw ChimeraX command output is
-kept separately under `raw/af_contacts/` and `raw/interface_residues/`.
+kept separately under `raw/af_contacts/` and `raw/interface_residues/`. Contact
+reports record the `AF contacts max PAE` threshold used for that rerun.
 
 Saved PNG and ChimeraX session files are also written to the active mode folder.
 Their filenames include timestamps only when the display controller's
