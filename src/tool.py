@@ -345,16 +345,29 @@ class AFDisplayController(ToolInstance):
         self._live_pae_highlight.setChecked(True)
         self._live_pae_highlight.setToolTip(
             "When enabled, moving the cutoff slider live-selects matching "
-            "residues and overlays their rows/columns in the PAE plot."
+            "residues and overlays only the below-cutoff inter-chain cells "
+            "in the PAE plot."
         )
         self._live_pae_highlight.stateChanged.connect(self._live_pae_highlight_changed)
-        pae_action_row.addWidget(self._live_pae_highlight, 1)
+        pae_action_row.addWidget(self._live_pae_highlight)
+
+        pae_button_row = QHBoxLayout()
+        pae_group_layout.addLayout(pae_button_row)
+        pae_button_row.addStretch(1)
+        hide_unselected_button = QPushButton("Hide Unselected", pae_group)
+        hide_unselected_button.setToolTip(
+            "Hide atoms, bonds, pseudobonds, cartoons, and surfaces outside "
+            "the current PAE cutoff filter without forcing a new display style "
+            "on the matching residues."
+        )
+        hide_unselected_button.clicked.connect(self._hide_unselected_low_pae_residues)
+        pae_button_row.addWidget(hide_unselected_button)
         show_only_pae_button = QPushButton("Show Only", pae_group)
         show_only_pae_button.clicked.connect(self._show_only_low_pae_residues)
-        pae_action_row.addWidget(show_only_pae_button)
+        pae_button_row.addWidget(show_only_pae_button)
         show_all_pae_button = QPushButton("Show All", pae_group)
         show_all_pae_button.clicked.connect(self._show_all_current_model)
-        pae_action_row.addWidget(show_all_pae_button)
+        pae_button_row.addWidget(show_all_pae_button)
 
         analysis_row = QHBoxLayout()
         layout.addLayout(analysis_row)
@@ -426,10 +439,18 @@ class AFDisplayController(ToolInstance):
         self._status_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         layout.addWidget(self._status_label)
 
-        self._output_label = QLabel(parent)
+        self._details_group = QGroupBox("Run details", parent)
+        self._details_group.setCheckable(True)
+        self._details_group.setChecked(False)
+        details_layout = QVBoxLayout(self._details_group)
+        details_layout.setContentsMargins(8, 8, 8, 8)
+        self._output_label = QLabel(self._details_group)
         self._output_label.setWordWrap(True)
         self._output_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        layout.addWidget(self._output_label)
+        details_layout.addWidget(self._output_label)
+        self._output_label.setVisible(False)
+        self._details_group.toggled.connect(self._output_label.setVisible)
+        layout.addWidget(self._details_group)
 
         layout.addStretch(1)
 
@@ -531,7 +552,12 @@ class AFDisplayController(ToolInstance):
         else:
             self._slider_value_label.setText("0/0")
         if run is not None:
+            pair = self._current_pair()
             self._output_label.setText(
+                f"Active: {_display_pair_label(pair) if pair is not None else '(none)'}\n"
+                f"PAE cutoff: < {self._pae_threshold():g}\n"
+                f"PAE chain pair: {_chain_pair_label(self._current_chain_pair())}\n"
+                f"Last action: {self._last_action}\n\n"
                 f"Input folder:\n{run['input_directory']}\n\n"
                 f"Output folder:\n{run['output_dir']}"
             )
@@ -684,6 +710,9 @@ class AFDisplayController(ToolInstance):
 
     def _show_only_low_pae_residues(self):
         self._apply_interchain_pae_visibility("show_only")
+
+    def _hide_unselected_low_pae_residues(self):
+        self._apply_interchain_pae_visibility("hide_unselected")
 
     def _show_all_current_model(self):
         self._apply_interchain_pae_visibility("show_all")
@@ -857,13 +886,13 @@ class AFDisplayController(ToolInstance):
     def _update_status_strip(self):
         run = self._current_run()
         pair = self._current_pair()
+        last = _compact_status_text(self._last_action)
         if run is None or pair is None:
-            self._status_label.setText(f"Active: none\nLast: {self._last_action}")
+            self._status_label.setText(f"Last: {last}")
             return
         parts = [
-            f"Active: {_display_pair_label(pair)}",
-            f"cutoff < {self._pae_threshold():g}",
-            f"chain pair: {_chain_pair_label(self._current_chain_pair())}",
+            f"{_display_pair_label(pair)}",
+            f"PAE < {self._pae_threshold():g}",
         ]
         if not self._live_pae_highlight.isChecked():
             parts.append("live highlight off")
@@ -872,7 +901,7 @@ class AFDisplayController(ToolInstance):
         confidence_warning = _confidence_warning(self._current_pairs())
         if confidence_warning:
             parts.append(confidence_warning)
-        self._status_label.setText(" | ".join(parts) + f"\nLast: {self._last_action}")
+        self._status_label.setText(" | ".join(parts) + f" | Last: {last}")
 
 
 def _plot_closed(plot):
@@ -895,6 +924,13 @@ def _confidence_warning(pairs):
     if missing:
         return f"confidence missing: {missing}"
     return ""
+
+
+def _compact_status_text(text, limit=120):
+    one_line = " ".join(str(text).split())
+    if len(one_line) <= limit:
+        return one_line
+    return one_line[: max(0, limit - 3)] + "..."
 
 
 class AFMissenseTool(ToolInstance):

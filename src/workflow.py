@@ -897,8 +897,8 @@ def apply_interchain_pae_visibility(
         _clear_pae_highlight(plot)
         return f"Restored cartoon-only display for {structure}."
 
-    residues = _residues_with_min_interchain_pae_below(pae, max_pae, chain_pair)
-    highlight_pae_residues(plot, residues)
+    residues, cells = _interchain_pae_filter(pae, max_pae, chain_pair)
+    highlight_pae_cells(plot, cells)
     scope = _chain_pair_scope_label(chain_pair)
     if not residues:
         return (
@@ -908,12 +908,19 @@ def apply_interchain_pae_visibility(
     from chimerax.atomic import concise_residue_spec
 
     residue_spec = concise_residue_spec(session, residues)
+    _select_residues(session, residues)
     if mode == "select":
-        run(session, f"select {residue_spec}")
         return (
             f"Selected {len(residues)} residue(s) with minimum {scope} "
             f"PAE < {max_pae:g}."
         )
+    elif mode == "hide_unselected":
+        selection_name = _pae_filter_residue_name(structure)
+        _name_residues_from_residues(session, residues, selection_name)
+        outside_spec = f"{model_spec}&~{selection_name}"
+        for target in targets:
+            run(session, f"hide {outside_spec} {target}")
+        action = "Hid residues outside"
     elif mode == "show_only":
         for target in targets:
             run(session, f"hide {model_spec} {target}")
@@ -937,11 +944,11 @@ def preview_interchain_pae_residues(
     select: bool = True,
     highlight: bool = True,
 ):
-    residues = _residues_with_min_interchain_pae_below(pae, max_pae, chain_pair)
+    residues, cells = _interchain_pae_filter(pae, max_pae, chain_pair)
     if select:
         _select_residues(session, residues)
     if highlight:
-        highlight_pae_residues(plot, residues)
+        highlight_pae_cells(plot, cells)
     else:
         _clear_pae_highlight(plot)
     scope = _chain_pair_scope_label(chain_pair)
@@ -1067,6 +1074,13 @@ def _clear_contact_labels(session, contact_residue_name) -> None:
 
 def _contact_residue_name(pair_label: str) -> str:
     return f"af_contact_residues_{_safe_token(pair_label)}"
+
+
+def _pae_filter_residue_name(structure_model) -> str:
+    model_id = getattr(structure_model, "id_string", None) or getattr(
+        structure_model, "name", "model"
+    )
+    return f"pae_filter_residues_{_safe_token(str(model_id))}"
 
 
 def _name_contact_residues_from_file(
@@ -1369,38 +1383,33 @@ def _split_residue_token(token: str) -> Tuple[str, str]:
     return match.group(1), match.group(2)
 
 
-def highlight_pae_residues(plot, residues) -> None:
+def highlight_pae_cells(plot, cells) -> None:
     _clear_pae_highlight(plot)
-    if plot is None or _plot_closed(plot) or not residues:
+    if plot is None or _plot_closed(plot) or not cells:
         return
     try:
         view = plot._pae_view
         scene = view.scene()
-        rra = plot._pae.row_residues_or_atoms()
     except Exception:
-        return
-
-    residue_set = set(residues)
-    indices = [
-        index
-        for index, row in enumerate(rra)
-        if _residue_for_pae_row(row) in residue_set
-    ]
-    if not indices:
         return
 
     try:
         from Qt.QtGui import QBrush, QColor, QPen
 
-        brush = QBrush(QColor(255, 191, 0, 55))
-        pen = QPen(QColor(255, 128, 0, 180))
-        rect = scene.sceneRect()
-        width, height = rect.width(), rect.height()
+        brush = QBrush(QColor(255, 191, 0, 45))
+        pen = QPen(QColor(0, 0, 0, 180))
         items = []
-        for start, end in _contiguous_ranges(indices):
-            span = end - start + 1
-            items.append(scene.addRect(0, start, width, span, pen=pen, brush=brush))
-            items.append(scene.addRect(start, 0, span, height, pen=pen, brush=brush))
+        for top, left, bottom, right in _cell_rectangles(cells):
+            items.append(
+                scene.addRect(
+                    left,
+                    top,
+                    right - left + 1,
+                    bottom - top + 1,
+                    pen=pen,
+                    brush=brush,
+                )
+            )
         for item in items:
             item.setZValue(2)
         plot._af_toolbar_highlight_items = items
@@ -1434,7 +1443,10 @@ def _select_residues(session, residues) -> None:
         if residue is not None and not getattr(residue, "deleted", False):
             atoms.extend(residue.atoms)
     if atoms:
-        Atoms(atoms).selected = True
+        selected_atoms = Atoms(atoms)
+        selected_atoms.selected = True
+        selected_atoms.intra_bonds.selected = True
+        selected_atoms.intra_pseudobonds.selected = True
 
 
 def _contiguous_ranges(indices):
@@ -1451,6 +1463,36 @@ def _contiguous_ranges(indices):
     yield start, previous
 
 
+def _cell_rectangles(cells):
+    rows = {}
+    for row, column in cells:
+        rows.setdefault(row, []).append(column)
+
+    active = {}
+    for row in sorted(rows):
+        current_keys = set()
+        for start, end in _contiguous_ranges(rows[row]):
+            key = (start, end)
+            current_keys.add(key)
+            if key in active and active[key][1] == row - 1:
+                active[key][1] = row
+            else:
+                if key in active:
+                    top, bottom = active.pop(key)
+                    yield top, start, bottom, end
+                active[key] = [row, row]
+
+        for key in list(active):
+            if key not in current_keys and active[key][1] < row:
+                top, bottom = active.pop(key)
+                start, end = key
+                yield top, start, bottom, end
+
+    for key, (top, bottom) in active.items():
+        start, end = key
+        yield top, start, bottom, end
+
+
 def chain_pair_options(structure_model) -> Tuple[Tuple[str, str], ...]:
     chain_ids = _chain_ids(structure_model)
     pairs = []
@@ -1461,17 +1503,22 @@ def chain_pair_options(structure_model) -> Tuple[Tuple[str, str], ...]:
 
 
 def _residues_with_min_interchain_pae_below(pae, max_pae: float, chain_pair=None):
+    residues, _cells = _interchain_pae_filter(pae, max_pae, chain_pair)
+    return residues
+
+
+def _interchain_pae_filter(pae, max_pae: float, chain_pair=None):
     matrix = pae.pae_matrix
     rows = pae.row_residues_or_atoms()
     row_residues = [_residue_for_pae_row(row) for row in rows]
-    residues = []
+    selected_residue_set = set()
+    cells = set()
     allowed_chain_pairs = _allowed_chain_pairs(chain_pair)
     size = len(row_residues)
     for i in range(size):
         ri = row_residues[i]
         if ri is None or getattr(ri, "deleted", False):
             continue
-        min_interchain_pae = None
         for j in range(size):
             if j == i:
                 continue
@@ -1480,13 +1527,18 @@ def _residues_with_min_interchain_pae_below(pae, max_pae: float, chain_pair=None
                 continue
             if not _chains_allowed(ri.chain_id, rj.chain_id, allowed_chain_pairs):
                 continue
-            pair_pae = min(float(matrix[i, j]), float(matrix[j, i]))
-            if min_interchain_pae is None or pair_pae < min_interchain_pae:
-                min_interchain_pae = pair_pae
-                if min_interchain_pae < max_pae:
-                    residues.append(ri)
-                    break
-    return residues
+            pair_pae = float(matrix[i, j])
+            if pair_pae < max_pae:
+                cells.add((i, j))
+                selected_residue_set.add(ri)
+                selected_residue_set.add(rj)
+    residues = []
+    seen = set()
+    for residue in row_residues:
+        if residue in selected_residue_set and residue not in seen:
+            residues.append(residue)
+            seen.add(residue)
+    return residues, cells
 
 
 def _allowed_chain_pairs(chain_pair):

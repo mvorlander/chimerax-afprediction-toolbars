@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.10
+
+- Added a `Hide Unselected` action to the inter-chain PAE cutoff tool. It hides
+  atoms, bonds, pseudobonds, cartoons, and surfaces outside the current cutoff
+  filter while preserving the display style of matching residues.
+- Changed live PAE plot highlighting to mark only below-cutoff inter-chain PAE
+  cells instead of full rows and columns for selected residues.
+- Moved verbose active-run input/output paths into a collapsed `Run details`
+  panel to keep the controller compact.
+- Updated live PAE selection to select residue bonds and pseudobonds as well as
+  atoms, preventing atom-only displays when users apply ChimeraX show actions to
+  the highlighted selection.
+
 ## 1.3.9
 
 - Added an `AF contacts max PAE` slider to the display controller so the active
