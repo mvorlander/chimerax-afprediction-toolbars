@@ -883,6 +883,8 @@ def apply_interchain_pae_visibility(
     mode: str,
     chain_pair=None,
     plot=None,
+    select: bool = True,
+    highlight: bool = True,
 ) -> str:
     structure = getattr(pae, "structure", None)
     model_spec = _model_spec(structure)
@@ -899,7 +901,10 @@ def apply_interchain_pae_visibility(
         return f"Restored cartoon-only display for {structure}."
 
     residues, cells = _interchain_pae_filter(pae, max_pae, chain_pair)
-    highlight_pae_cells(plot, cells)
+    if highlight:
+        highlight_pae_cells(plot, cells)
+    elif plot is not None:
+        _clear_pae_highlight(plot)
     scope = _chain_pair_scope_label(chain_pair)
     if not residues:
         return (
@@ -909,7 +914,8 @@ def apply_interchain_pae_visibility(
     from chimerax.atomic import concise_residue_spec
 
     residue_spec = concise_residue_spec(session, residues)
-    _select_residues(session, residues)
+    if select:
+        _select_residues(session, residues)
     if mode == "select":
         return (
             f"Selected {len(residues)} residue(s) with minimum {scope} "
@@ -961,6 +967,7 @@ def apply_plddt_visibility(
     structure_model,
     min_plddt: float,
     mode: str,
+    select: bool = True,
 ) -> str:
     model_spec = _model_spec(structure_model)
     if structure_model is None or model_spec is None:
@@ -980,7 +987,8 @@ def apply_plddt_visibility(
     from chimerax.atomic import concise_residue_spec
 
     residue_spec = concise_residue_spec(session, residues)
-    _select_residues(session, residues)
+    if select:
+        _select_residues(session, residues)
     if mode == "select":
         return f"Selected {len(residues)} residue(s) with pLDDT >= {min_plddt:g}."
     elif mode == "hide_unselected":

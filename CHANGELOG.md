@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.13
+
+- Changed confidence selection to an explicit either/or mode switch with PAE as
+  the default and pLDDT as the alternate mode.
+- Added controller guidance that lower PAE cutoffs are more stringent while
+  higher pLDDT cutoffs are more stringent.
+- Made `Hide Unselected` propagate the active confidence filter across all
+  models in the active run.
+- Replaced the save-results group title with an explicit bold section header.
+
 ## 1.3.12
 
 - Renamed the confidence-selection section to `Selection by prediction

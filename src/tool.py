@@ -297,10 +297,12 @@ class AFDisplayController(ToolInstance):
         self._show_all.stateChanged.connect(self._apply_visibility)
         layout.addWidget(self._show_all)
 
-        pae_group = QGroupBox("Selection by prediction confidence", parent)
-        pae_group.setStyleSheet(
-            "QGroupBox::title { font-weight: 700; font-size: 14px; }"
+        confidence_header = QLabel(
+            "<b>Selection by prediction confidence</b>", parent
         )
+        layout.addWidget(confidence_header)
+
+        pae_group = QGroupBox(parent)
         pae_group.setToolTip(
             "Select residues by prediction confidence. Use inter-chain PAE "
             "for multimer contacts, or pLDDT for local confidence in monomers "
@@ -311,10 +313,29 @@ class AFDisplayController(ToolInstance):
         pae_group_layout.setSpacing(6)
         layout.addWidget(pae_group)
 
+        mode_row = QHBoxLayout()
+        pae_group_layout.addLayout(mode_row)
+        mode_row.addWidget(QLabel("Selection mode", pae_group))
+        self._confidence_mode_menu = QComboBox(pae_group)
+        self._confidence_mode_menu.addItem("PAE (inter-chain)", "pae")
+        self._confidence_mode_menu.addItem("pLDDT", "plddt")
+        self._confidence_mode_menu.currentIndexChanged.connect(
+            self._confidence_mode_changed
+        )
+        mode_row.addWidget(self._confidence_mode_menu, 1)
+
+        note = QLabel(
+            "PAE: lower is more stringent. pLDDT: higher is more stringent.",
+            pae_group,
+        )
+        note.setWordWrap(True)
+        pae_group_layout.addWidget(note)
+
         pae_subheader = QLabel("<b>Inter-chain PAE</b>", pae_group)
         pae_group_layout.addWidget(pae_subheader)
 
         chain_pair_label = QLabel("PAE chain pair", pae_group)
+        self._pae_widgets = [pae_subheader, chain_pair_label]
         chain_pair_label.setToolTip(
             "Choose which chain pair is used by the PAE cutoff. "
             "'All inter-chain pairs' means the best contact to any other "
@@ -332,10 +353,12 @@ class AFDisplayController(ToolInstance):
         self._chain_pair_menu.currentIndexChanged.connect(self._preview_low_pae_residues)
         self._chain_pair_values.append(None)
         pae_group_layout.addWidget(self._chain_pair_menu)
+        self._pae_widgets.append(self._chain_pair_menu)
 
         pae_cutoff_row = QHBoxLayout()
         pae_group_layout.addLayout(pae_cutoff_row)
         cutoff_label = QLabel("PAE cutoff", pae_group)
+        self._pae_widgets.append(cutoff_label)
         cutoff_label.setToolTip(
             "Live-highlight residues whose best PAE to the selected partner "
             "chain(s) is below this value. With All inter-chain pairs, at "
@@ -353,13 +376,16 @@ class AFDisplayController(ToolInstance):
         self._pae_threshold_slider.setValue(10)
         self._pae_threshold_slider.valueChanged.connect(self._pae_threshold_changed)
         pae_cutoff_row.addWidget(self._pae_threshold_slider, 1)
+        self._pae_widgets.append(self._pae_threshold_slider)
         self._pae_threshold_value_label = QLabel("10", pae_group)
         self._pae_threshold_value_label.setMinimumWidth(24)
         pae_cutoff_row.addWidget(self._pae_threshold_value_label)
+        self._pae_widgets.append(self._pae_threshold_value_label)
 
         pae_action_row = QHBoxLayout()
         pae_group_layout.addLayout(pae_action_row)
         self._live_pae_highlight = QCheckBox("Live PAE highlight", pae_group)
+        self._pae_widgets.append(self._live_pae_highlight)
         self._live_pae_highlight.setChecked(True)
         self._live_pae_highlight.setToolTip(
             "When enabled, moving the cutoff slider live-selects matching "
@@ -369,31 +395,13 @@ class AFDisplayController(ToolInstance):
         self._live_pae_highlight.stateChanged.connect(self._live_pae_highlight_changed)
         pae_action_row.addWidget(self._live_pae_highlight)
 
-        pae_button_row = QHBoxLayout()
-        pae_group_layout.addLayout(pae_button_row)
-        pae_button_row.addStretch(1)
-        hide_unselected_button = QPushButton("Hide Unselected", pae_group)
-        hide_unselected_button.setToolTip(
-            "Hide atoms, pseudobonds, cartoons, and surfaces outside the "
-            "current PAE cutoff filter without forcing a new display style on "
-            "the matching residues. Bond display flags are kept normal so "
-            "atoms are not later shown without their bonds."
-        )
-        hide_unselected_button.clicked.connect(self._hide_unselected_low_pae_residues)
-        pae_button_row.addWidget(hide_unselected_button)
-        show_only_pae_button = QPushButton("Show Only", pae_group)
-        show_only_pae_button.clicked.connect(self._show_only_low_pae_residues)
-        pae_button_row.addWidget(show_only_pae_button)
-        show_all_pae_button = QPushButton("Show All", pae_group)
-        show_all_pae_button.clicked.connect(self._show_all_current_model)
-        pae_button_row.addWidget(show_all_pae_button)
-
         plddt_subheader = QLabel("<b>pLDDT confidence</b>", pae_group)
         pae_group_layout.addWidget(plddt_subheader)
 
         plddt_cutoff_row = QHBoxLayout()
         pae_group_layout.addLayout(plddt_cutoff_row)
         plddt_cutoff_label = QLabel("pLDDT cutoff", pae_group)
+        self._plddt_widgets = [plddt_subheader, plddt_cutoff_label]
         plddt_cutoff_label.setToolTip(
             "Select residues whose pLDDT confidence score is at or above this "
             "value. Higher values are more stringent."
@@ -409,13 +417,16 @@ class AFDisplayController(ToolInstance):
         self._plddt_threshold_slider.setValue(70)
         self._plddt_threshold_slider.valueChanged.connect(self._plddt_threshold_changed)
         plddt_cutoff_row.addWidget(self._plddt_threshold_slider, 1)
+        self._plddt_widgets.append(self._plddt_threshold_slider)
         self._plddt_threshold_value_label = QLabel("70", pae_group)
         self._plddt_threshold_value_label.setMinimumWidth(28)
         plddt_cutoff_row.addWidget(self._plddt_threshold_value_label)
+        self._plddt_widgets.append(self._plddt_threshold_value_label)
 
         plddt_action_row = QHBoxLayout()
         pae_group_layout.addLayout(plddt_action_row)
         self._live_plddt_highlight = QCheckBox("Live pLDDT selection", pae_group)
+        self._plddt_widgets.append(self._live_plddt_highlight)
         self._live_plddt_highlight.setChecked(False)
         self._live_plddt_highlight.setToolTip(
             "When enabled, moving the pLDDT cutoff slider live-selects "
@@ -425,29 +436,32 @@ class AFDisplayController(ToolInstance):
         self._live_plddt_highlight.stateChanged.connect(self._live_plddt_highlight_changed)
         plddt_action_row.addWidget(self._live_plddt_highlight)
 
-        plddt_button_row = QHBoxLayout()
-        pae_group_layout.addLayout(plddt_button_row)
-        plddt_button_row.addStretch(1)
-        hide_unselected_plddt_button = QPushButton("Hide Unselected", pae_group)
-        hide_unselected_plddt_button.setToolTip(
+        confidence_button_row = QHBoxLayout()
+        pae_group_layout.addLayout(confidence_button_row)
+        confidence_button_row.addStretch(1)
+        hide_unselected_button = QPushButton("Hide Unselected", pae_group)
+        hide_unselected_button.setToolTip(
             "Hide atoms, pseudobonds, cartoons, and surfaces outside the "
-            "current pLDDT cutoff filter."
+            "current confidence cutoff filter for every model in the active "
+            "run. Bond display flags are kept normal so atoms are not later "
+            "shown without their bonds."
         )
-        hide_unselected_plddt_button.clicked.connect(
-            self._hide_unselected_plddt_residues
+        hide_unselected_button.clicked.connect(
+            self._hide_unselected_confidence_residues
         )
-        plddt_button_row.addWidget(hide_unselected_plddt_button)
-        show_only_plddt_button = QPushButton("Show Only", pae_group)
-        show_only_plddt_button.clicked.connect(self._show_only_plddt_residues)
-        plddt_button_row.addWidget(show_only_plddt_button)
-        show_all_plddt_button = QPushButton("Show All", pae_group)
-        show_all_plddt_button.clicked.connect(self._show_all_current_model)
-        plddt_button_row.addWidget(show_all_plddt_button)
+        confidence_button_row.addWidget(hide_unselected_button)
+        show_only_button = QPushButton("Show Only", pae_group)
+        show_only_button.clicked.connect(self._show_only_confidence_residues)
+        confidence_button_row.addWidget(show_only_button)
+        show_all_button = QPushButton("Show All", pae_group)
+        show_all_button.clicked.connect(self._show_all_current_model)
+        confidence_button_row.addWidget(show_all_button)
 
-        save_group = QGroupBox("Save analysis results", parent)
-        save_group.setStyleSheet(
-            "QGroupBox::title { font-weight: 700; font-size: 14px; }"
-        )
+        self._sync_confidence_mode_controls()
+
+        save_header = QLabel("<b>Save analysis results</b>", parent)
+        layout.addWidget(save_header)
+        save_group = QGroupBox(parent)
         save_group_layout = QVBoxLayout(save_group)
         save_group_layout.setContentsMargins(8, 8, 8, 8)
         save_group_layout.setSpacing(6)
@@ -637,6 +651,7 @@ class AFDisplayController(ToolInstance):
             pair = self._current_pair()
             self._output_label.setText(
                 f"Active: {_display_pair_label(pair) if pair is not None else '(none)'}\n"
+                f"Confidence mode: {self._confidence_mode_label()}\n"
                 f"PAE cutoff: < {self._pae_threshold():g}\n"
                 f"pLDDT cutoff: >= {self._plddt_threshold():g}\n"
                 f"PAE chain pair: {_chain_pair_label(self._current_chain_pair())}\n"
@@ -756,14 +771,16 @@ class AFDisplayController(ToolInstance):
 
     def _pae_threshold_changed(self, value):
         self._pae_threshold_value_label.setText(str(value))
-        self._preview_low_pae_residues()
+        if self._confidence_mode() == "pae":
+            self._preview_low_pae_residues()
 
     def _plddt_threshold(self):
         return float(self._plddt_threshold_slider.value())
 
     def _plddt_threshold_changed(self, value):
         self._plddt_threshold_value_label.setText(str(value))
-        self._preview_plddt_residues()
+        if self._confidence_mode() == "plddt":
+            self._preview_plddt_residues()
 
     def _contact_max_pae(self):
         return float(self._contact_max_pae_slider.value())
@@ -776,14 +793,48 @@ class AFDisplayController(ToolInstance):
         )
 
     def _live_pae_highlight_changed(self, *_args):
-        self._preview_low_pae_residues()
+        if self._confidence_mode() == "pae":
+            self._preview_low_pae_residues()
 
     def _live_plddt_highlight_changed(self, *_args):
-        self._preview_plddt_residues()
+        if self._confidence_mode() == "plddt":
+            self._preview_plddt_residues()
+
+    def _confidence_mode(self):
+        try:
+            data = self._confidence_mode_menu.currentData()
+        except AttributeError:
+            data = self._confidence_mode_menu.itemData(
+                self._confidence_mode_menu.currentIndex()
+            )
+        return data or "pae"
+
+    def _confidence_mode_label(self):
+        return _confidence_mode_label_for_value(self._confidence_mode())
+
+    def _confidence_mode_changed(self, *_args):
+        self._sync_confidence_mode_controls()
+        self._preview_count = None
+        self._plddt_preview_count = None
+        if self._confidence_mode() == "pae":
+            self._preview_low_pae_residues()
+        else:
+            self._preview_plddt_residues()
+
+    def _sync_confidence_mode_controls(self):
+        mode = self._confidence_mode()
+        for widget in getattr(self, "_pae_widgets", []):
+            widget.setEnabled(mode == "pae")
+        for widget in getattr(self, "_plddt_widgets", []):
+            widget.setEnabled(mode == "plddt")
 
     def _preview_low_pae_residues(self, *_args):
         from .workflow import preview_interchain_pae_residues
 
+        if self._confidence_mode() != "pae":
+            self._preview_count = None
+            self._update_status_strip()
+            return
         pae = self._current_pae()
         run = self._current_run()
         if pae is None or run is None:
@@ -807,6 +858,10 @@ class AFDisplayController(ToolInstance):
     def _preview_plddt_residues(self, *_args):
         from .workflow import preview_plddt_residues
 
+        if self._confidence_mode() != "plddt":
+            self._plddt_preview_count = None
+            self._update_status_strip()
+            return
         pair = self._current_pair()
         if pair is None:
             self._plddt_preview_count = None
@@ -822,20 +877,20 @@ class AFDisplayController(ToolInstance):
         self._plddt_preview_count = len(residues) if live else None
         self._update_status_strip()
 
-    def _show_only_low_pae_residues(self):
-        self._apply_interchain_pae_visibility("show_only")
+    def _show_only_confidence_residues(self):
+        if self._confidence_mode() == "pae":
+            self._apply_interchain_pae_visibility("show_only")
+        else:
+            self._apply_plddt_visibility("show_only")
 
-    def _hide_unselected_low_pae_residues(self):
-        self._apply_interchain_pae_visibility("hide_unselected")
+    def _hide_unselected_confidence_residues(self):
+        if self._confidence_mode() == "pae":
+            self._hide_unselected_pae_for_run()
+        else:
+            self._hide_unselected_plddt_for_run()
 
     def _show_all_current_model(self):
         self._apply_interchain_pae_visibility("show_all")
-
-    def _show_only_plddt_residues(self):
-        self._apply_plddt_visibility("show_only")
-
-    def _hide_unselected_plddt_residues(self):
-        self._apply_plddt_visibility("hide_unselected")
 
     def _apply_interchain_pae_visibility(self, mode):
         from .workflow import apply_interchain_pae_visibility
@@ -856,6 +911,89 @@ class AFDisplayController(ToolInstance):
             self._preview_low_pae_residues()
         self._set_status(message)
         self.session.logger.info(message)
+
+    def _hide_unselected_pae_for_run(self):
+        from .workflow import apply_interchain_pae_visibility
+
+        run = self._current_run()
+        pairs = self._current_pairs()
+        if run is None or not pairs:
+            raise UserError("No active AF prediction run is available.")
+        threshold = self._pae_threshold()
+        chain_pair = self._current_chain_pair()
+        current_pair = self._current_pair()
+        current_plot = run.get("pae_plot")
+        messages = []
+        for pair in pairs:
+            if pair is current_pair:
+                continue
+            pae = pair.get("pae")
+            if pae is not None:
+                messages.append(
+                    apply_interchain_pae_visibility(
+                        self.session,
+                        pae,
+                        threshold,
+                        "hide_unselected",
+                        chain_pair=chain_pair,
+                        plot=None,
+                        select=False,
+                        highlight=False,
+                    )
+                )
+        if current_pair is not None and current_pair.get("pae") is not None:
+            messages.append(
+                apply_interchain_pae_visibility(
+                    self.session,
+                    current_pair.get("pae"),
+                    threshold,
+                    "hide_unselected",
+                    chain_pair=chain_pair,
+                    plot=current_plot,
+                    select=True,
+                    highlight=True,
+                )
+            )
+        self._set_status(
+            f"Applied PAE hide-unselected to {len(messages)} model(s) in this run."
+        )
+        self.session.logger.info(self._last_action)
+
+    def _hide_unselected_plddt_for_run(self):
+        from .workflow import apply_plddt_visibility
+
+        pairs = self._current_pairs()
+        if not pairs:
+            raise UserError("No active AF prediction run is available.")
+        threshold = self._plddt_threshold()
+        current_pair = self._current_pair()
+        messages = []
+        for pair in pairs:
+            if pair is current_pair:
+                continue
+            messages.append(
+                apply_plddt_visibility(
+                    self.session,
+                    pair.get("model"),
+                    threshold,
+                    "hide_unselected",
+                    select=False,
+                )
+            )
+        if current_pair is not None:
+            messages.append(
+                apply_plddt_visibility(
+                    self.session,
+                    current_pair.get("model"),
+                    threshold,
+                    "hide_unselected",
+                    select=True,
+                )
+            )
+        self._set_status(
+            f"Applied pLDDT hide-unselected to {len(messages)} model(s) in this run."
+        )
+        self.session.logger.info(self._last_action)
 
     def _apply_plddt_visibility(self, mode):
         from .workflow import apply_plddt_visibility
@@ -956,6 +1094,10 @@ class AFDisplayController(ToolInstance):
         self._pae_threshold_slider.setValue(10)
         self._pae_threshold_value_label.setText("10")
         self._pae_threshold_slider.blockSignals(False)
+        self._confidence_mode_menu.blockSignals(True)
+        self._confidence_mode_menu.setCurrentIndex(0)
+        self._confidence_mode_menu.blockSignals(False)
+        self._sync_confidence_mode_controls()
         self._plddt_threshold_slider.blockSignals(True)
         self._plddt_threshold_slider.setValue(70)
         self._plddt_threshold_value_label.setText("70")
@@ -1035,6 +1177,7 @@ class AFDisplayController(ToolInstance):
             return
         parts = [
             f"{_display_pair_label(pair)}",
+            self._confidence_mode_label(),
             f"PAE < {self._pae_threshold():g}",
             f"pLDDT >= {self._plddt_threshold():g}",
         ]
@@ -1063,6 +1206,12 @@ def _chain_pair_label(chain_pair):
     if chain_pair is None:
         return "all inter-chain pairs"
     return f"{chain_pair[0]}-{chain_pair[1]}"
+
+
+def _confidence_mode_label_for_value(mode):
+    if mode == "plddt":
+        return "pLDDT mode"
+    return "PAE mode"
 
 
 def _confidence_warning(pairs):
