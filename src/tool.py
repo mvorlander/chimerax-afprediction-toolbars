@@ -103,7 +103,7 @@ class AFPredictionLauncher(ToolInstance):
         form_layout.addWidget(self._prediction_filter_entry, row, 1, 1, 2)
 
         row += 1
-        form_layout.addWidget(QLabel("Contact chain", form), row, 0)
+        form_layout.addWidget(QLabel("Align structures on chain", form), row, 0)
         self._chain_entry = QLineEdit(form)
         self._chain_entry.setPlaceholderText("Blank = first chain in each structure")
         form_layout.addWidget(self._chain_entry, row, 1, 1, 2)
@@ -244,6 +244,17 @@ class AFDisplayController(ToolInstance):
         title = QLabel("<b>AF Model/PAE Slider</b>", parent)
         layout.addWidget(title)
 
+        top_action_row = QHBoxLayout()
+        layout.addLayout(top_action_row)
+        reset_display_button = QPushButton("Reset Active Run", parent)
+        reset_display_button.setToolTip(
+            "Restore this run to the initial model, PAE plot, cutoff, chain "
+            "filter, selection, and cartoon/contact-sidechain display."
+        )
+        reset_display_button.clicked.connect(self._reset_active_run_display)
+        top_action_row.addWidget(reset_display_button)
+        top_action_row.addStretch(1)
+
         layout.addWidget(QLabel("Prediction run", parent))
         self._run_menu = QComboBox(parent)
         self._run_menu.currentIndexChanged.connect(self._set_run_index)
@@ -286,6 +297,9 @@ class AFDisplayController(ToolInstance):
         layout.addWidget(self._show_all)
 
         pae_group = QGroupBox("Inter-chain PAE selection", parent)
+        pae_group.setStyleSheet(
+            "QGroupBox::title { font-weight: bold; font-size: 14px; }"
+        )
         pae_group.setToolTip(
             "Select residues by their minimum inter-chain PAE. "
             "'All inter-chain pairs' means a residue passes if at least one "
@@ -356,9 +370,10 @@ class AFDisplayController(ToolInstance):
         pae_button_row.addStretch(1)
         hide_unselected_button = QPushButton("Hide Unselected", pae_group)
         hide_unselected_button.setToolTip(
-            "Hide atoms, bonds, pseudobonds, cartoons, and surfaces outside "
-            "the current PAE cutoff filter without forcing a new display style "
-            "on the matching residues."
+            "Hide atoms, pseudobonds, cartoons, and surfaces outside the "
+            "current PAE cutoff filter without forcing a new display style on "
+            "the matching residues. Bond display flags are kept normal so "
+            "atoms are not later shown without their bonds."
         )
         hide_unselected_button.clicked.connect(self._hide_unselected_low_pae_residues)
         pae_button_row.addWidget(hide_unselected_button)
@@ -369,16 +384,25 @@ class AFDisplayController(ToolInstance):
         show_all_pae_button.clicked.connect(self._show_all_current_model)
         pae_button_row.addWidget(show_all_pae_button)
 
+        save_group = QGroupBox("Save analysis results", parent)
+        save_group.setStyleSheet(
+            "QGroupBox::title { font-weight: bold; font-size: 14px; }"
+        )
+        save_group_layout = QVBoxLayout(save_group)
+        save_group_layout.setContentsMargins(8, 8, 8, 8)
+        save_group_layout.setSpacing(6)
+        layout.addWidget(save_group)
+
         analysis_row = QHBoxLayout()
-        layout.addLayout(analysis_row)
-        contact_cutoff_label = QLabel("AF contacts max PAE", parent)
+        save_group_layout.addLayout(analysis_row)
+        contact_cutoff_label = QLabel("AF contacts PAE cutoff", save_group)
         contact_cutoff_label.setToolTip(
-            "Maximum PAE allowed when rerunning ChimeraX alphafold contacts. "
-            "Lower values make the contact pseudobonds, labels, and written "
+            "Maximum PAE allowed when saving ChimeraX alphafold contacts. "
+            "Lower values make the saved contact pseudobonds, labels, and "
             "contact files more stringent."
         )
         analysis_row.addWidget(contact_cutoff_label)
-        self._contact_max_pae_slider = QSlider(Qt.Horizontal, parent)
+        self._contact_max_pae_slider = QSlider(Qt.Horizontal, save_group)
         self._contact_max_pae_slider.setMinimum(0)
         self._contact_max_pae_slider.setMaximum(30)
         self._contact_max_pae_slider.setSingleStep(1)
@@ -390,46 +414,44 @@ class AFDisplayController(ToolInstance):
             self._contact_max_pae_changed
         )
         analysis_row.addWidget(self._contact_max_pae_slider, 1)
-        self._contact_max_pae_value_label = QLabel("30", parent)
+        self._contact_max_pae_value_label = QLabel("30", save_group)
         self._contact_max_pae_value_label.setMinimumWidth(24)
         analysis_row.addWidget(self._contact_max_pae_value_label)
-        run_contacts_button = QPushButton("Run Contacts/Interfaces", parent)
+        run_contacts_button = QPushButton("Save Contacts and Interfaces", save_group)
         run_contacts_button.setToolTip(
             "Run ChimeraX alphafold contacts and interfaces for the active "
-            "model only using the selected AF contacts max PAE, then write "
-            "formatted reports to the active output folder."
+            "model only using the selected PAE cutoff, then write formatted "
+            "reports to the active output folder."
         )
         run_contacts_button.clicked.connect(self._run_contacts_interfaces)
         analysis_row.addWidget(run_contacts_button)
 
         save_row = QHBoxLayout()
-        layout.addLayout(save_row)
-        save_row.addWidget(QLabel("File suffix", parent))
-        self._png_suffix_entry = QLineEdit(parent)
+        save_group_layout.addLayout(save_row)
+        save_row.addWidget(QLabel("File suffix", save_group))
+        self._png_suffix_entry = QLineEdit(save_group)
         self._png_suffix_entry.setPlaceholderText("Optional filename suffix")
         save_row.addWidget(self._png_suffix_entry, 1)
-        self._timestamp_files = QCheckBox("Timestamp", parent)
+        self._timestamp_files = QCheckBox("Timestamp", save_group)
         self._timestamp_files.setChecked(True)
         save_row.addWidget(self._timestamp_files)
-        save_png_button = QPushButton("Save PNG", parent)
+        save_png_button = QPushButton("Save PNG", save_group)
         save_png_button.clicked.connect(self._save_transparent_png)
         save_row.addWidget(save_png_button)
-        save_session_button = QPushButton("Save Session", parent)
+        save_session_button = QPushButton("Save Session", save_group)
         save_session_button.clicked.connect(self._save_chimerax_session)
         save_row.addWidget(save_session_button)
 
+        output_row = QHBoxLayout()
+        save_group_layout.addLayout(output_row)
+        output_row.addStretch(1)
+        copy_output_button = QPushButton("Copy Output Path", save_group)
+        copy_output_button.clicked.connect(self._copy_output_path)
+        output_row.addWidget(copy_output_button)
+
         manage_row = QHBoxLayout()
         layout.addLayout(manage_row)
-        copy_output_button = QPushButton("Copy Output Path", parent)
-        copy_output_button.clicked.connect(self._copy_output_path)
-        manage_row.addWidget(copy_output_button)
-        reset_display_button = QPushButton("Reset Active Run", parent)
-        reset_display_button.setToolTip(
-            "Restore this run to the initial model, PAE plot, cutoff, chain "
-            "filter, selection, and cartoon/contact-sidechain display."
-        )
-        reset_display_button.clicked.connect(self._reset_active_run_display)
-        manage_row.addWidget(reset_display_button)
+        manage_row.addStretch(1)
         close_run_button = QPushButton("Close Run", parent)
         close_run_button.clicked.connect(self._close_current_run)
         manage_row.addWidget(close_run_button)
@@ -587,6 +609,7 @@ class AFDisplayController(ToolInstance):
                 )
                 model = pair["model"]
                 if model is not None and not getattr(model, "deleted", False):
+                    _restore_model_bonds(model)
                     model.display = visible
             plot = run_entry.get("pae_plot")
             if active_run:
@@ -679,7 +702,8 @@ class AFDisplayController(ToolInstance):
     def _contact_max_pae_changed(self, value):
         self._contact_max_pae_value_label.setText(str(value))
         self._set_status(
-            f"AF contacts max PAE set to {value}. Click Run Contacts/Interfaces to rerun."
+            "AF contacts PAE cutoff set to "
+            f"{value}. Click Save Contacts and Interfaces to rerun."
         )
 
     def _live_pae_highlight_changed(self, *_args):
@@ -924,6 +948,15 @@ def _confidence_warning(pairs):
     if missing:
         return f"confidence missing: {missing}"
     return ""
+
+
+def _restore_model_bonds(model):
+    if model is None or getattr(model, "deleted", False):
+        return
+    try:
+        model.bonds.displays = True
+    except Exception:
+        pass
 
 
 def _compact_status_text(text, limit=120):

@@ -13,7 +13,7 @@ Recommended wheel install:
    wheel:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.10-py3-none-any.whl
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.11-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -62,14 +62,14 @@ The controller also includes inter-chain PAE controls. Choose `All inter-chain
 pairs` or a specific `PAE chain pair`, then use the `PAE cutoff` slider to find
 residues by their minimum PAE to the selected partner chain(s). The default
 threshold is 10, and smaller values are more stringent. Moving the slider
-live-selects matching residues and marks their rows/columns in the PAE plot.
-The PAE overlay marks only the below-cutoff inter-chain cells that caused those
-residues to pass the filter, rather than full rows and columns. `Hide
-Unselected` hides atoms, bonds, pseudobonds, cartoons, and surfaces outside the
-current cutoff filter while preserving the current display style of matching
-residues. `Show Only` hides the rest of the current model and shows cartoons
-only for those residues, while `Show All` restores a cartoon-only display for
-the current model.
+live-selects matching residues. The PAE overlay marks only the below-cutoff
+inter-chain cells that caused those residues to pass the filter, rather than
+full rows and columns. `Hide Unselected` hides atoms, pseudobonds, cartoons, and
+surfaces outside the current cutoff filter while preserving the current display
+style of matching residues. Bond display flags are kept normal so later ChimeraX
+`show` commands do not reveal isolated atoms. `Show Only` hides the rest of the
+current model and shows cartoons only for those residues, while `Show All`
+restores a cartoon-only display for the current model.
 
 The `PAE chain pair` menu does not change which model is displayed. It only
 controls which chain pair is considered by the inter-chain PAE cutoff. For
@@ -80,14 +80,14 @@ pass. Turn off `Live PAE highlight` to stop live selection and PAE overlays
 while still using the cutoff for `Show Only`.
 
 Opening a prediction run prepares ChimeraX contact/interface display for every
-model, but does not write contact/interface files to disk. Use `Run
-Contacts/Interfaces` when you want to write formatted contact and interface
-reports for the active model to the active run's output folder. The `AF contacts
-max PAE` slider controls how stringent ChimeraX's `alphafold contacts` command
-is for that rerun; lower values keep only more confident contacts. Rerunning
-contacts/interfaces removes old AF-contact residue labels before relabeling the
-current result. Interface residues are shown as connected residue sticks on top
-of the cartoon model.
+model, but does not write contact/interface files to disk. The `Save analysis
+results` section contains `Save Contacts and Interfaces` for writing formatted
+contact and interface reports for the active model to the active run's output
+folder. The `AF contacts PAE cutoff` slider controls how stringent ChimeraX's
+`alphafold contacts` command is for that save; lower values keep only more
+confident contacts. Rerunning contacts/interfaces removes old AF-contact residue
+labels before relabeling the current result. Interface residues are shown as
+connected residue sticks on top of the cartoon model.
 
 Use `Save PNG` to save the current 3D view as a transparent-background PNG in
 the active run's output folder. Use `Save Session` to save a ChimeraX `.cxs`
@@ -130,19 +130,19 @@ Git, a source checkout, or running Python yourself.
    the downloaded wheel:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.10-py3-none-any.whl
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.11-py3-none-any.whl
 ```
 
 On Windows this looks like:
 
 ```text
-toolshed install C:\Users\yourname\Downloads\ChimeraX_AFPredictionToolbars-1.3.10-py3-none-any.whl
+toolshed install C:\Users\yourname\Downloads\ChimeraX_AFPredictionToolbars-1.3.11-py3-none-any.whl
 ```
 
 On macOS this looks like:
 
 ```text
-toolshed install /Users/yourname/Downloads/ChimeraX_AFPredictionToolbars-1.3.10-py3-none-any.whl
+toolshed install /Users/yourname/Downloads/ChimeraX_AFPredictionToolbars-1.3.11-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -228,7 +228,7 @@ Download the newer release `.whl`, then install it in ChimeraX with `reinstall
 true`:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.10-py3-none-any.whl reinstall true
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.11-py3-none-any.whl reinstall true
 ```
 
 Restart ChimeraX after upgrading. ChimeraX only loads bundle Python code at
@@ -313,8 +313,8 @@ the filter can be narrowed.
 
 ## Output
 
-When you click `Run Contacts/Interfaces`, generated contact and interface files
-are written under:
+When you click `Save Contacts and Interfaces`, generated contact and interface
+files are written under:
 
 ```text
 <prediction folder>/analysis/<filter-or-folder-name>/<mode>/
@@ -336,10 +336,11 @@ analysis_summary.txt
 ```
 
 These summaries record the bundle version, input folder, active mode, selected
-filter, contact-chain choice, and opened model/data pairs.
+filter, alignment/contact-chain choice, and opened model/data pairs.
 
-The `Contact chain` field is optional. If left blank, the first chain detected in
-each opened structure is used.
+The `Align structures on chain` field is optional. If left blank, the first
+chain detected in each opened structure is used for alignment and contact
+analysis.
 
 ## Compatibility Automation
 

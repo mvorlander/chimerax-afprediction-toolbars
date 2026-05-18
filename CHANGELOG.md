@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.11
+
+- Preserved normal bond display flags in AF display actions so a later bare
+  ChimeraX `show` command does not reveal isolated atoms.
+- Restored bond display flags whenever AF run visibility is updated, repairing
+  sessions affected by older bundle versions that hid bonds directly.
+- Renamed the launcher `Contact chain` field to `Align structures on chain`.
+- Reworked the display controller layout: `Reset Active Run` is now at the top,
+  inter-chain PAE and save-result sections have clearer headers, contact saving
+  is labeled `Save Contacts and Interfaces`, and PNG/session/output-path controls
+  are grouped under `Save analysis results`.
+
 ## 1.3.10
 
 - Added a `Hide Unselected` action to the inter-chain PAE cutoff tool. It hides

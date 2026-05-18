@@ -140,7 +140,7 @@ def run_af_prediction_analysis(
         f"Opened {len(pairs)} {_mode_label(mode)} pair(s).\n"
         f"Run metadata was written to:\n{output_dir}\n"
         "Contacts/interfaces were prepared for display. Files are written only "
-        "when you use 'Run Contacts/Interfaces' for the active model."
+        "when you use 'Save Contacts and Interfaces' for the active model."
     )
     return AnalysisResult(
         mode=mode,
@@ -563,7 +563,7 @@ def run_contacts_interfaces_for_pair(
     display_pair["interface_residue_name"] = result["interface_residue_name"]
     display_pair["contact_analysis_files"] = result["files"]
     return (
-        f"Ran contacts/interfaces for {label} on chain {chain_id}. "
+        f"Saved contacts/interfaces for {label} on chain {chain_id}. "
         f"AF contacts max PAE: {max_pae:g}. Contacts: {result['contact_count']}; "
         f"interface residues: "
         f"{result['interface_residue_count']}. Files were written to:\n{output_dir}"
@@ -656,9 +656,9 @@ def _run_contact_workflow(
     if write_files:
         contact_command += " outputFile " + quote_if_necessary(str(contact_raw_file))
 
+    _restore_bond_displays(structure_model)
     commands = [
         "hide " + structure_spec + " atoms",
-        "hide " + structure_spec + " bonds",
         "hide " + structure_spec + " surfaces",
         "show " + structure_spec + " cartoons",
         contact_command,
@@ -889,9 +889,10 @@ def apply_interchain_pae_visibility(
     if structure is None or model_spec is None:
         raise UserError("The active PAE plot is not associated with an open structure.")
 
-    targets = ("atoms", "bonds", "pseudobonds", "cartoons", "surfaces")
+    targets = ("atoms", "pseudobonds", "cartoons", "surfaces")
+    _restore_bond_displays(structure)
     if mode == "show_all":
-        for target in ("atoms", "bonds", "pseudobonds", "surfaces"):
+        for target in ("atoms", "pseudobonds", "surfaces"):
             run(session, f"hide {model_spec} {target}")
         run(session, f"show {model_spec} cartoons")
         _clear_pae_highlight(plot)
@@ -961,7 +962,8 @@ def reset_prediction_display(session, display_pairs) -> None:
         model_spec = _model_spec(model)
         if model_spec is None:
             continue
-        for target in ("atoms", "bonds", "pseudobonds", "surfaces"):
+        _restore_bond_displays(model)
+        for target in ("atoms", "pseudobonds", "surfaces"):
             run(session, f"hide {model_spec} {target}")
         run(session, f"show {model_spec} cartoons")
         contact_name = pair.get("contact_residue_name")
@@ -1116,6 +1118,16 @@ def _show_contact_sidechains(session, contact_residue_name: str) -> None:
     run(session, f"show {contact_residue_name}&sidechain atoms")
     run(session, f"show {contact_residue_name}&sidechain bonds")
     run(session, f"style {contact_residue_name}&sidechain stick")
+
+
+def _restore_bond_displays(structure_model) -> None:
+    if structure_model is None or getattr(structure_model, "deleted", False):
+        return None
+    try:
+        structure_model.bonds.displays = True
+    except Exception:
+        return None
+    return None
 
 
 def _label_contact_residues(session, structure_model, residues) -> None:
@@ -1444,6 +1456,7 @@ def _select_residues(session, residues) -> None:
             atoms.extend(residue.atoms)
     if atoms:
         selected_atoms = Atoms(atoms)
+        selected_atoms.intra_bonds.displays = True
         selected_atoms.selected = True
         selected_atoms.intra_bonds.selected = True
         selected_atoms.intra_pseudobonds.selected = True
