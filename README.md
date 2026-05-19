@@ -1,19 +1,18 @@
 # ChimeraX AF Prediction Toolbars
 
+This bundle facilitates the analysis of alphafold (multimer) predictions by processing input folders and automatically associating PAE plots to predicted structures. Selection via numeric cutoffs on PAE or pLDDT values helps to focus on the confident predictions and tame the spaghetti monsters.
 
-## Quickstart
-
-![alt text](screenshots/Annotated_screenshot.png)
-This bundle facilitates the analysis of alphafold (multimer) predictions by processing input folders and automatically associating PAE plots to predicted structures. Selection via numeric cutoffs helps to focus on the confident predictions and avoiding spaghetting monsters
+![Annotated ChimeraX AF toolbar workflow](screenshots/Annotated_screenshot.png)
 
 ## Demo
 
 [Watch a short AF prediction analysis demo](demo/chimerax_af_prediction_demo.mp4).
 
-## Installation 
+## Quickstart
+
 Use one install method only.
 
-### Recommended wheel install:
+### Recommended: wheel install
 
 1. Download the latest `.whl` from the "assets" tab under:
    https://github.com/mvorlander/chimerax-afprediction-toolbars/releases/latest
@@ -30,7 +29,7 @@ toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.18-py3-none-any.whl
 
 <details>
 
-  <summary>Alternative installation method</summary>
+<summary>Alternative: install from source</summary>
 
 ```bash
 git clone https://github.com/mvorlander/chimerax-afprediction-toolbars.git
@@ -40,8 +39,9 @@ python3 install_chimerax_bundle.py
 
 Restart ChimeraX after installing from source.
 
-<details>
+</details>
 
+## Main Features
 
 This bundle adds a small `AF` toolbar tab to ChimeraX with five actions:
 
@@ -53,6 +53,8 @@ This bundle adds a small `AF` toolbar tab to ChimeraX with five actions:
 
 The workflow is implemented in bundled Python code. It does not call external `.cxc`
 scripts and does not contain machine-specific paths.
+
+## AF2/AF3 Workflow
 
 AF2/AF3 runs open a dedicated `AF Model/PAE Slider` controller. The controller
 has a prediction-run drop-down and a pair slider. The drop-down chooses which
@@ -68,6 +70,8 @@ When several models are opened from one prediction run, the bundle aligns them
 to the first opened model and adds them to one ChimeraX model group in the
 Models panel. Starting another AF2/AF3 run keeps the earlier run loaded; use the
 controller drop-down to switch which run's models and PAEs are displayed.
+
+## Confidence-Based Selection
 
 The controller also includes a `Selection by prediction confidence` section.
 Use the `Selection mode` switch to choose either PAE or pLDDT; PAE is the
@@ -98,6 +102,8 @@ any other chain is below the cutoff; it does not require every chain pair to
 pass. Turn off `Live PAE highlight` to stop live selection and PAE overlays
 while still using the cutoff for `Show Only`.
 
+## Analysis Results and Export
+
 Opening a prediction run prepares ChimeraX contact/interface display for every
 model, but does not write contact/interface files to disk. The `Save analysis
 results` section contains `Save Contacts and Interfaces` for writing formatted
@@ -121,6 +127,8 @@ mode selected, PAE threshold reset to 10, pLDDT cutoff reset to 70, AF contacts
 max PAE reset to 30, cartoon-only model display, and prepared contact side
 chains shown. Longer active-run path details are kept in the collapsed `Run
 details` panel to keep the controller compact.
+
+## AlphaMissense Mapping
 
 The missense panel fetches AlphaMissense scores directly for a human UniProt
 accession or entry name, associates them with the selected target chain, colors
