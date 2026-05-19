@@ -541,6 +541,8 @@ def run_contacts_interfaces_for_pair(
     output_dir: Path,
     requested_chain: Optional[str] = None,
     max_pae: Optional[float] = DEFAULT_CONTACT_MAX_PAE,
+    chain_pair=None,
+    all_chain_pairs: bool = False,
 ) -> str:
     model = display_pair.get("model")
     model_spec = _model_spec(model)
@@ -548,24 +550,27 @@ def run_contacts_interfaces_for_pair(
         raise UserError("No active structure model is available for contact analysis.")
 
     label = str(display_pair.get("label") or "model")
-    chain_id = _resolve_chain_id(model, requested_chain)
     max_pae = _validate_contact_max_pae(max_pae)
-    _clear_contact_labels(session, display_pair.get("contact_residue_name"))
+    chain_pairs = _contact_chain_pairs(
+        model,
+        requested_chain=requested_chain,
+        chain_pair=chain_pair,
+        all_chain_pairs=all_chain_pairs,
+    )
     result = _run_contact_workflow(
         session,
         label,
         output_dir,
-        chain_id,
+        chain_pairs,
         model_spec,
         model,
         write_files=True,
         max_pae=max_pae,
+        update_display=False,
     )
-    display_pair["contact_residue_name"] = result["contact_residue_name"]
-    display_pair["interface_residue_name"] = result["interface_residue_name"]
     display_pair["contact_analysis_files"] = result["files"]
     return (
-        f"Saved contacts/interfaces for {label} on chain {chain_id}. "
+        f"Saved contacts/interfaces for {label} on {_chain_pairs_label(chain_pairs)}. "
         f"AF contacts max PAE: {max_pae:g}. Contacts: {result['contact_count']}; "
         f"interface residues: "
         f"{result['interface_residue_count']}. Files were written to:\n{output_dir}"
@@ -578,17 +583,22 @@ def _prepare_contact_interface_display(
     model_spec = _model_spec(structure_model)
     if model_spec is None:
         return _empty_contact_result()
-    chain_id = _resolve_chain_id(structure_model, requested_chain)
+    chain_pairs = _contact_chain_pairs(
+        structure_model,
+        requested_chain=requested_chain,
+        all_chain_pairs=False,
+    )
     try:
         return _run_contact_workflow(
             session,
             pair_label,
             None,
-            chain_id,
+            chain_pairs,
             model_spec,
             structure_model,
             write_files=False,
             max_pae=DEFAULT_CONTACT_MAX_PAE,
+            update_display=True,
         )
     except Exception as err:
         name = getattr(structure_model, "name", pair_label)
@@ -602,44 +612,48 @@ def _run_contact_workflow(
     session,
     pair_label: str,
     output_dir: Optional[Path],
-    chain_id: str,
+    chain_pairs,
     model_spec: Optional[str],
     structure_model,
     *,
     write_files: bool,
     max_pae: Optional[float],
+    update_display: bool,
 ) -> Dict[str, object]:
     max_pae = _validate_contact_max_pae(max_pae)
+    chain_pairs = tuple(chain_pairs or ())
+    if not chain_pairs:
+        raise UserError("No inter-chain pairs are available for contact analysis.")
     if write_files:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
     label = _safe_token(pair_label)
     structure_spec = model_spec or "last-opened"
-    chain_spec = f"{structure_spec}&/{chain_id}"
-    contact_pseudobond_name = f"af_contacts_{label}"
-    contact_raw_file = (
-        output_dir / "raw" / "af_contacts" / f"af_contacts_{label}_raw.txt"
-        if write_files
-        else None
+    contact_pseudobond_name = (
+        f"af_contacts_{label}"
+        if update_display
+        else f"af_contacts_save_{label}_{datetime.now().strftime('%H%M%S%f')}"
     )
+    contact_raw_dir = output_dir / "raw" / "af_contacts" if write_files else None
     contact_tsv_file = output_dir / f"af_contacts_{label}.tsv" if write_files else None
     contact_report_file = output_dir / f"af_contacts_{label}.txt" if write_files else None
     contact_residue_name = _contact_residue_name(pair_label)
-    interface_name = f"interface_residues_{label}"
+    interface_name = (
+        f"interface_residues_{label}"
+        if update_display
+        else f"interface_save_residues_{label}_{datetime.now().strftime('%H%M%S%f')}"
+    )
+    interface_raw_dir = output_dir / "raw" / "interface_residues" if write_files else None
     interface_raw_file = (
-        output_dir
-        / "raw"
-        / "interface_residues"
-        / f"interface_residues_{label}_raw.txt"
+        interface_raw_dir / f"interface_residues_{label}_raw.txt"
         if write_files
         else None
     )
     interface_report_file = output_dir / f"interface_residues_{label}.txt" if write_files else None
     if write_files:
-        contact_raw_file.parent.mkdir(parents=True, exist_ok=True)
+        contact_raw_dir.mkdir(parents=True, exist_ok=True)
         interface_raw_file.parent.mkdir(parents=True, exist_ok=True)
         for path in (
-            contact_raw_file,
             contact_tsv_file,
             contact_report_file,
             interface_raw_file,
@@ -647,28 +661,44 @@ def _run_contact_workflow(
         ):
             _unlink_if_exists(path)
 
-    contact_command = (
-        "alphafold contacts "
-        + chain_spec
-        + " name "
-        + quote_if_necessary(contact_pseudobond_name)
-        + " maxPae "
-        + f"{max_pae:g}"
-    )
+    if update_display:
+        _clear_contact_labels(session, contact_residue_name)
+        _restore_bond_displays(structure_model)
+        commands = [
+            "hide " + structure_spec + " atoms",
+            "hide " + structure_spec + " surfaces",
+            "show " + structure_spec + " cartoons",
+        ]
+        for command in commands:
+            run(session, command)
+
+    contact_raw_files = []
+    contact_count = 0
+    for pair_index, (chain_a, chain_b) in enumerate(chain_pairs):
+        raw_file = (
+            contact_raw_dir
+            / f"af_contacts_{label}_{_safe_token(chain_a)}_{_safe_token(chain_b)}_raw.txt"
+            if write_files
+            else None
+        )
+        if raw_file is not None:
+            _unlink_if_exists(raw_file)
+            contact_raw_files.append(raw_file)
+        contact_count += _run_alphafold_contacts_for_chain_pair(
+            session,
+            structure_model,
+            chain_a,
+            chain_b,
+            contact_pseudobond_name,
+            max_pae=max_pae,
+            replace=(pair_index == 0),
+            output_file=raw_file,
+        )
+
+    contact_rows = []
     if write_files:
-        contact_command += " outputFile " + quote_if_necessary(str(contact_raw_file))
-
-    _restore_bond_displays(structure_model)
-    commands = [
-        "hide " + structure_spec + " atoms",
-        "hide " + structure_spec + " surfaces",
-        "show " + structure_spec + " cartoons",
-        contact_command,
-    ]
-    for command in commands:
-        run(session, command)
-
-    contact_rows = _read_contact_rows(contact_raw_file) if write_files else []
+        for raw_file in contact_raw_files:
+            contact_rows.extend(_read_contact_rows(raw_file))
     if write_files:
         _write_contact_reports(
             contact_rows,
@@ -676,31 +706,31 @@ def _run_contact_workflow(
             contact_tsv_file,
             pair_label=pair_label,
             model_spec=structure_spec,
-            chain_id=chain_id,
+            chain_scope=_chain_pairs_label(chain_pairs),
             max_pae=max_pae,
         )
-    contact_residues = _contact_residues_from_pseudobonds(
-        structure_model, contact_pseudobond_name
+    contact_residues = (
+        _contact_residues_from_pseudobonds(structure_model, contact_pseudobond_name)
+        if update_display
+        else []
     )
-    contact_residues_named = _name_residues_from_residues(
-        session, contact_residues, contact_residue_name
+    contact_residues_named = (
+        _name_residues_from_residues(session, contact_residues, contact_residue_name)
+        if update_display
+        else False
     )
 
-    commands = [
-        "interfaces select "
-        + chain_spec
-        + " contacting "
-        + structure_spec
-        + "&~/"
-        + chain_id
-        + " bothSides true",
-        "rainbow " + structure_spec + " chains palette bupu",
-        "color byhetero",
-    ]
-    for command in commands:
-        run(session, command)
+    interface_residues = _run_interfaces_for_chain_pairs(
+        session, structure_model, structure_spec, chain_pairs
+    )
+    if update_display:
+        commands = [
+            "rainbow " + structure_spec + " chains palette bupu",
+            "color byhetero",
+        ]
+        for command in commands:
+            run(session, command)
 
-    interface_residues = _selected_residues_for_structure(session, structure_model)
     interface_named = _name_residues_from_residues(
         session, interface_residues, interface_name
     )
@@ -719,26 +749,34 @@ def _run_contact_workflow(
             interface_report_file,
             pair_label=pair_label,
             model_spec=structure_spec,
-            chain_id=chain_id,
+            chain_scope=_chain_pairs_label(chain_pairs),
         )
-    if interface_named:
+    if update_display and interface_named:
         run(session, "select " + interface_name)
         run(session, "show " + interface_name + " atoms")
         run(session, "show " + interface_name + " bonds")
         run(session, "style " + interface_name + " stick")
-    if contact_residues_named:
+    if update_display and contact_residues_named:
         _show_contact_sidechains(session, contact_residue_name)
         _label_contact_residues(session, structure_model, contact_residues)
 
+    if not update_display:
+        _delete_pseudobond_group(structure_model, contact_pseudobond_name)
+        if interface_named:
+            try:
+                run(session, "name delete " + interface_name)
+            except Exception:
+                pass
+
     return {
         "contact_residue_name": contact_residue_name if contact_residues_named else None,
-        "interface_residue_name": interface_name if interface_named else None,
-        "contact_count": len(contact_rows) if write_files else _pseudobond_count(structure_model, contact_pseudobond_name),
+        "interface_residue_name": interface_name if update_display and interface_named else None,
+        "contact_count": len(contact_rows) if write_files else contact_count,
         "interface_residue_count": len(interface_tokens),
         "files": _contact_output_files(
             contact_report_file,
             contact_tsv_file,
-            contact_raw_file,
+            contact_raw_files,
             interface_report_file,
             interface_raw_file,
         ),
@@ -913,9 +951,6 @@ def apply_interchain_pae_visibility(
             f"No residues with minimum {scope} PAE < {max_pae:g} were found."
         )
 
-    from chimerax.atomic import concise_residue_spec
-
-    residue_spec = concise_residue_spec(session, residues)
     if select:
         _select_residues(session, residues)
     if mode == "select":
@@ -924,16 +959,10 @@ def apply_interchain_pae_visibility(
             f"PAE < {max_pae:g}."
         )
     elif mode == "hide_unselected":
-        selection_name = _pae_filter_residue_name(structure)
-        _name_residues_from_residues(session, residues, selection_name)
-        outside_spec = f"{model_spec}&~{selection_name}"
-        for target in targets:
-            run(session, f"hide {outside_spec} {target}")
+        _hide_unselected_residue_display(session, structure, residues)
         action = "Hid residues outside"
     elif mode == "show_only":
-        for target in targets:
-            run(session, f"hide {model_spec} {target}")
-        run(session, f"show {residue_spec} cartoons")
+        _show_only_residue_cartoons(session, structure, residues)
         action = "Showing only"
     else:
         raise UserError(f"Unknown PAE visibility mode: {mode}")
@@ -986,24 +1015,15 @@ def apply_plddt_visibility(
     if not residues:
         return f"No residues with pLDDT >= {min_plddt:g} were found."
 
-    from chimerax.atomic import concise_residue_spec
-
-    residue_spec = concise_residue_spec(session, residues)
     if select:
         _select_residues(session, residues)
     if mode == "select":
         return f"Selected {len(residues)} residue(s) with pLDDT >= {min_plddt:g}."
     elif mode == "hide_unselected":
-        selection_name = _plddt_filter_residue_name(structure_model)
-        _name_residues_from_residues(session, residues, selection_name)
-        outside_spec = f"{model_spec}&~{selection_name}"
-        for target in ("atoms", "pseudobonds", "cartoons", "surfaces"):
-            run(session, f"hide {outside_spec} {target}")
+        _hide_unselected_residue_display(session, structure_model, residues)
         action = "Hid residues outside"
     elif mode == "show_only":
-        for target in ("atoms", "pseudobonds", "cartoons", "surfaces"):
-            run(session, f"hide {model_spec} {target}")
-        run(session, f"show {residue_spec} cartoons")
+        _show_only_residue_cartoons(session, structure_model, residues)
         action = "Showing only"
     else:
         raise UserError(f"Unknown pLDDT visibility mode: {mode}")
@@ -1204,6 +1224,141 @@ def _restore_bond_displays(structure_model) -> None:
     return None
 
 
+def _hide_unselected_residue_display(session, structure_model, residues) -> None:
+    keep_residues = _residues_for_structure(structure_model, residues)
+    outside_residues = _residue_complement(structure_model, keep_residues)
+    _restore_bond_displays(structure_model)
+    if len(outside_residues) == 0:
+        return
+
+    outside_atoms = outside_residues.atoms
+    outside_atoms.displays = False
+    outside_residues.ribbon_displays = False
+    _hide_bonds_touching_residues(structure_model, outside_residues)
+    _hide_pseudobonds_touching_residues(structure_model, outside_residues)
+    _hide_surface_patches_for_atoms(outside_atoms)
+
+
+def _show_only_residue_cartoons(session, structure_model, residues) -> None:
+    keep_residues = _residues_for_structure(structure_model, residues)
+    try:
+        structure_model.atoms.displays = False
+        structure_model.residues.ribbon_displays = False
+        structure_model.bonds.displays = False
+    except Exception:
+        model_spec = _model_spec(structure_model)
+        if model_spec is not None:
+            for target in ("atoms", "pseudobonds", "cartoons", "surfaces"):
+                run(session, f"hide {model_spec} {target}")
+            if len(keep_residues) > 0:
+                from chimerax.atomic import concise_residue_spec
+
+                run(session, f"show {concise_residue_spec(session, keep_residues)} cartoons")
+        return
+
+    _hide_all_pseudobonds(structure_model)
+    _hide_surface_patches_for_atoms(structure_model.atoms)
+    if len(keep_residues) > 0:
+        keep_residues.ribbon_displays = True
+
+
+def _residues_for_structure(structure_model, residues):
+    from chimerax.atomic import Residues
+
+    if structure_model is None or residues is None:
+        return Residues([])
+    selected = [
+        residue
+        for residue in residues
+        if residue is not None
+        and not getattr(residue, "deleted", False)
+        and getattr(residue, "structure", None) is structure_model
+    ]
+    return Residues(selected)
+
+
+def _residue_complement(structure_model, keep_residues):
+    from chimerax.atomic import Residues
+
+    if structure_model is None or getattr(structure_model, "deleted", False):
+        return Residues([])
+    keep = set(keep_residues)
+    return Residues([residue for residue in structure_model.residues if residue not in keep])
+
+
+def _hide_bonds_touching_residues(structure_model, residues) -> None:
+    residue_set = set(residues)
+    if not residue_set:
+        return
+    try:
+        from chimerax.atomic import Bonds
+
+        bonds = []
+        for bond in structure_model.bonds:
+            atom_a, atom_b = bond.atoms
+            if atom_a.residue in residue_set or atom_b.residue in residue_set:
+                bonds.append(bond)
+        if bonds:
+            Bonds(bonds).displays = False
+    except Exception:
+        pass
+
+
+def _hide_pseudobonds_touching_residues(structure_model, residues) -> None:
+    residue_set = set(residues)
+    if not residue_set:
+        return
+    try:
+        from chimerax.atomic import Pseudobonds
+
+        pbonds = []
+        for group in structure_model.pbg_map.values():
+            for pseudobond in group.pseudobonds:
+                atom_a, atom_b = pseudobond.atoms
+                if atom_a.residue in residue_set or atom_b.residue in residue_set:
+                    pbonds.append(pseudobond)
+        if pbonds:
+            Pseudobonds(pbonds).displays = False
+    except Exception:
+        pass
+
+
+def _hide_all_pseudobonds(structure_model) -> None:
+    try:
+        for group in structure_model.pbg_map.values():
+            group.pseudobonds.displays = False
+    except Exception:
+        pass
+
+
+def _delete_pseudobond_group(structure_model, pseudobond_name: str) -> None:
+    try:
+        group = structure_model.pseudobond_group(pseudobond_name, create_type=None)
+    except TypeError:
+        try:
+            group = structure_model.pbg_map.get(pseudobond_name)
+        except Exception:
+            group = None
+    except Exception:
+        group = None
+    if group is None:
+        return
+    try:
+        group.pseudobonds.delete()
+        structure_model.session.models.close([group])
+    except Exception:
+        pass
+
+
+def _hide_surface_patches_for_atoms(atoms) -> None:
+    try:
+        from chimerax.atomic import molsurf
+
+        molsurf.hide_surface_atom_patches(atoms)
+    except Exception:
+        pass
+
+
 def _label_contact_residues(session, structure_model, residues) -> None:
     if residues is None or len(residues) == 0:
         return
@@ -1226,6 +1381,94 @@ def _label_contact_residues(session, structure_model, residues) -> None:
         label_model.update_labels()
     except Exception as err:
         session.logger.warning(f"Could not label AF contact residues: {err}")
+
+
+def _contact_chain_pairs(
+    structure_model,
+    *,
+    requested_chain: Optional[str] = None,
+    chain_pair=None,
+    all_chain_pairs: bool = False,
+) -> Tuple[Tuple[str, str], ...]:
+    chain_ids = _chain_ids(structure_model)
+    if chain_pair is not None:
+        chain_a, chain_b = chain_pair
+        missing = [chain for chain in (chain_a, chain_b) if chain not in chain_ids]
+        if missing:
+            raise UserError(
+                "Contact chain pair contains chain(s) not found in the active "
+                f"model: {', '.join(missing)}. Available chains: {', '.join(chain_ids)}"
+            )
+        return ((chain_a, chain_b),)
+
+    pairs = chain_pair_options(structure_model)
+    if all_chain_pairs:
+        return pairs
+
+    chain_id = _resolve_chain_id(structure_model, requested_chain)
+    return tuple((chain_id, other) for other in chain_ids if other != chain_id)
+
+
+def _chain_pairs_label(chain_pairs) -> str:
+    chain_pairs = tuple(chain_pairs or ())
+    if not chain_pairs:
+        return "no chain pairs"
+    if len(chain_pairs) == 1:
+        return f"chain pair {chain_pairs[0][0]}-{chain_pairs[0][1]}"
+    return "all chain pairs (" + ", ".join(f"{a}-{b}" for a, b in chain_pairs) + ")"
+
+
+def _run_alphafold_contacts_for_chain_pair(
+    session,
+    structure_model,
+    chain_a: str,
+    chain_b: str,
+    pseudobond_name: str,
+    *,
+    max_pae: float,
+    replace: bool,
+    output_file: Optional[Path],
+) -> int:
+    atoms = _atoms_for_chain(structure_model, chain_a)
+    to_atoms = _atoms_for_chain(structure_model, chain_b)
+    if atoms is None or len(atoms) == 0:
+        raise UserError(f"No atoms found for contact chain {chain_a}.")
+    if to_atoms is None or len(to_atoms) == 0:
+        raise UserError(f"No atoms found for contact partner chain {chain_b}.")
+
+    from chimerax.alphafold.contacts import alphafold_contacts
+
+    pbonds = alphafold_contacts(
+        session,
+        atoms,
+        to_atoms=to_atoms,
+        max_pae=max_pae,
+        name=pseudobond_name,
+        replace=replace,
+        output_file=str(output_file) if output_file is not None else None,
+    )
+    return len(pbonds)
+
+
+def _run_interfaces_for_chain_pairs(session, structure_model, structure_spec: str, chain_pairs):
+    from chimerax.atomic import Residues
+
+    residues = []
+    seen = set()
+    for chain_a, chain_b in chain_pairs:
+        run(
+            session,
+            "interfaces select "
+            + f"{structure_spec}&/{chain_a}"
+            + " contacting "
+            + f"{structure_spec}&/{chain_b}"
+            + " bothSides true",
+        )
+        for residue in _selected_residues_for_structure(session, structure_model):
+            if residue not in seen:
+                seen.add(residue)
+                residues.append(residue)
+    return Residues(residues)
 
 
 def _residue_display_color(residue) -> Tuple[int, int, int, int]:
@@ -1362,7 +1605,7 @@ def _write_contact_reports(
     *,
     pair_label: str,
     model_spec: str,
-    chain_id: str,
+    chain_scope: str,
     max_pae: float,
 ) -> None:
     created = datetime.now().isoformat(timespec="seconds")
@@ -1382,16 +1625,15 @@ def _write_contact_reports(
         f"AlphaFold contact report: {pair_label}",
         f"Generated: {created}",
         f"Model: {model_spec}",
-        f"Contact chain: /{chain_id}",
+        f"Chain scope: {chain_scope}",
         f"AF contacts max PAE: {max_pae:g}",
         "",
         "What this file contains",
         "This report lists inter-chain contacts produced by ChimeraX's "
-        "'alphafold contacts' command for the active model. The query residue "
-        "is on the selected contact chain; the partner residue is on another "
-        "chain. Only contacts with PAE values at or below the AF contacts max "
-        "PAE threshold are included. Lower PAE values indicate a more "
-        "confident relative placement.",
+        "'alphafold contacts' command for the active model and selected chain "
+        "scope. Only contacts with PAE values at or below the current PAE "
+        "cutoff are included. Lower PAE values indicate a more confident "
+        "relative placement.",
         "",
         f"Contact count: {len(rows)}",
         "",
@@ -1427,7 +1669,7 @@ def _write_interface_report(
     *,
     pair_label: str,
     model_spec: str,
-    chain_id: str,
+    chain_scope: str,
 ) -> None:
     created = datetime.now().isoformat(timespec="seconds")
     by_chain: Dict[str, List[str]] = {}
@@ -1439,7 +1681,7 @@ def _write_interface_report(
         f"Interface residue report: {pair_label}",
         f"Generated: {created}",
         f"Model: {model_spec}",
-        f"Contact chain: /{chain_id}",
+        f"Chain scope: {chain_scope}",
         "",
         "What this file contains",
         "This report lists the residue-level interface selected by ChimeraX's "

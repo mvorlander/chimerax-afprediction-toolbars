@@ -469,33 +469,28 @@ class AFDisplayController(ToolInstance):
 
         analysis_row = QHBoxLayout()
         save_group_layout.addLayout(analysis_row)
-        contact_cutoff_label = QLabel("AF contacts PAE cutoff", save_group)
-        contact_cutoff_label.setToolTip(
-            "Maximum PAE allowed when saving ChimeraX alphafold contacts. "
-            "Lower values make the saved contact pseudobonds, labels, and "
-            "contact files more stringent."
+        contact_settings_label = QLabel("Contacts use current PAE cutoff", save_group)
+        contact_settings_label.setToolTip(
+            "Saved AlphaFold contacts use the current PAE cutoff slider from "
+            "Selection by prediction confidence. Lower values are more stringent."
         )
-        analysis_row.addWidget(contact_cutoff_label)
-        self._contact_max_pae_slider = QSlider(Qt.Horizontal, save_group)
-        self._contact_max_pae_slider.setMinimum(0)
-        self._contact_max_pae_slider.setMaximum(30)
-        self._contact_max_pae_slider.setSingleStep(1)
-        self._contact_max_pae_slider.setPageStep(5)
-        self._contact_max_pae_slider.setTickInterval(5)
-        self._contact_max_pae_slider.setTickPosition(QSlider.TicksBelow)
-        self._contact_max_pae_slider.setValue(30)
-        self._contact_max_pae_slider.valueChanged.connect(
-            self._contact_max_pae_changed
+        analysis_row.addWidget(contact_settings_label)
+        self._contact_scope_menu = QComboBox(save_group)
+        self._contact_scope_menu.addItem("All chain pairs", "all")
+        self._contact_scope_menu.addItem("Selected PAE pair", "selected")
+        self._contact_scope_menu.setToolTip(
+            "Choose whether saved AlphaFold contacts/interfaces are computed "
+            "for every inter-chain pair in the active model or only for the "
+            "specific pair currently chosen in the PAE chain-pair menu. If "
+            "the PAE menu is set to All inter-chain pairs, both options use "
+            "all pairs."
         )
-        analysis_row.addWidget(self._contact_max_pae_slider, 1)
-        self._contact_max_pae_value_label = QLabel("30", save_group)
-        self._contact_max_pae_value_label.setMinimumWidth(24)
-        analysis_row.addWidget(self._contact_max_pae_value_label)
+        analysis_row.addWidget(self._contact_scope_menu)
         run_contacts_button = QPushButton("Save Contacts and Interfaces", save_group)
         run_contacts_button.setToolTip(
             "Run ChimeraX alphafold contacts and interfaces for the active "
-            "model only using the selected PAE cutoff, then write formatted "
-            "reports to the active output folder."
+            "model only using the selected PAE cutoff and chain-pair scope, "
+            "then write formatted reports to the active output folder."
         )
         run_contacts_button.clicked.connect(self._run_contacts_interfaces)
         analysis_row.addWidget(run_contacts_button)
@@ -782,16 +777,6 @@ class AFDisplayController(ToolInstance):
         if self._confidence_mode() == "plddt":
             self._preview_plddt_residues()
 
-    def _contact_max_pae(self):
-        return float(self._contact_max_pae_slider.value())
-
-    def _contact_max_pae_changed(self, value):
-        self._contact_max_pae_value_label.setText(str(value))
-        self._set_status(
-            "AF contacts PAE cutoff set to "
-            f"{value}. Click Save Contacts and Interfaces to rerun."
-        )
-
     def _live_pae_highlight_changed(self, *_args):
         if self._confidence_mode() == "pae":
             self._preview_low_pae_residues()
@@ -1019,16 +1004,30 @@ class AFDisplayController(ToolInstance):
         pair = self._current_pair()
         if run is None or pair is None:
             raise UserError("No active AF prediction run is available.")
+        chain_pair = self._contact_chain_pair_scope()
         message = run_contacts_interfaces_for_pair(
             self.session,
             pair,
             run["output_dir"],
             requested_chain=run.get("requested_chain"),
-            max_pae=self._contact_max_pae(),
+            max_pae=self._pae_threshold(),
+            chain_pair=chain_pair,
+            all_chain_pairs=self._contact_scope() == "all" or chain_pair is None,
         )
-        self._preview_low_pae_residues()
         self._set_status(message)
         self.session.logger.info(message)
+
+    def _contact_scope(self):
+        try:
+            data = self._contact_scope_menu.currentData()
+        except Exception:
+            data = None
+        return data or "all"
+
+    def _contact_chain_pair_scope(self):
+        if self._contact_scope() != "selected":
+            return None
+        return self._current_chain_pair()
 
     def _save_transparent_png(self):
         from .workflow import save_active_view_png
@@ -1102,10 +1101,6 @@ class AFDisplayController(ToolInstance):
         self._plddt_threshold_slider.setValue(70)
         self._plddt_threshold_value_label.setText("70")
         self._plddt_threshold_slider.blockSignals(False)
-        self._contact_max_pae_slider.blockSignals(True)
-        self._contact_max_pae_slider.setValue(30)
-        self._contact_max_pae_value_label.setText("30")
-        self._contact_max_pae_slider.blockSignals(False)
         self._live_pae_highlight.setChecked(True)
         self._live_plddt_highlight.setChecked(False)
         self._plddt_preview_count = None

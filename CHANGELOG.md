@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.15
+
+- Sped up `Hide Unselected` and `Show Only` by updating ChimeraX atom,
+  residue, bond, pseudobond, and surface display arrays directly instead of
+  creating large named selections and issuing multiple command-line hides.
+- Added save-time contact scope control for either all chain pairs or the
+  currently selected PAE chain pair.
+- Removed the separate save-section AF contacts cutoff slider; saved contacts
+  now use the current PAE cutoff.
+- Changed `Save Contacts and Interfaces` to write reports without changing the
+  displayed model styling, labels, coloring, or visibility.
+
 ## 1.3.14
 
 - Made AF run alignment independent of previous loaded runs by aligning after
