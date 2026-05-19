@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.14
+
+- Made AF run alignment independent of previous loaded runs by aligning after
+  the run model group is created.
+- Replaced the alignment command-string path with Matchmaker's Python API using
+  explicit specific-chain pairing for the requested alignment chain.
+- Updated run metadata to record final model specs after grouping/alignment.
+
 ## 1.3.13
 
 - Changed confidence selection to an explicit either/or mode switch with PAE as

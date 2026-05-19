@@ -123,8 +123,10 @@ def run_af_prediction_analysis(
             }
         )
 
-    _align_structures(session, structures, requested_chain)
     model_group = _group_structures(session, structures, run_label)
+    _align_structures(session, structures, requested_chain)
+    for display_pair, pair_summary in zip(display_pairs, pair_summaries):
+        pair_summary["model_spec"] = _model_spec(display_pair.get("model"))
     _write_analysis_summary(
         output_dir,
         mode=mode,
@@ -1704,22 +1706,89 @@ def _align_structures(session, structures, requested_chain: Optional[str]) -> No
         return
 
     target = structures[0]
-    target_spec = _model_spec(target)
-    if target_spec is None:
-        return
     target_chain = _resolve_chain_id(target, requested_chain)
-    target_chain_spec = f"{target_spec}/{target_chain}"
+    target_atoms = _atoms_for_chain(target, target_chain)
+    target_spec = _model_spec(target)
+    if target_atoms is None or len(target_atoms) == 0 or target_spec is None:
+        session.logger.warning(
+            f"Could not align AF models: no atoms found for reference chain {target_chain}."
+        )
+        return
 
     for structure in structures[1:]:
         model_spec = _model_spec(structure)
         if model_spec is None:
             continue
+        chain_id = "?"
         try:
             chain_id = _resolve_chain_id(structure, requested_chain)
-            run(session, f"mm {model_spec}/{chain_id} to {target_chain_spec}")
+            moving_atoms = _atoms_for_chain(structure, chain_id)
+            if moving_atoms is None or len(moving_atoms) == 0:
+                raise UserError(f"no atoms found for chain {chain_id}")
+            _match_chain_atoms(session, moving_atoms, target_atoms)
         except Exception as err:
             name = getattr(structure, "name", model_spec)
-            session.logger.warning(f"Could not align {name} to {target_spec}: {err}")
+            session.logger.warning(
+                f"Could not align {name} chain {chain_id} to "
+                f"{target_spec} chain {target_chain}: {err}"
+            )
+
+
+def _atoms_for_chain(structure_model, chain_id: str):
+    if structure_model is None or getattr(structure_model, "deleted", False):
+        return None
+    try:
+        for chain in structure_model.chains:
+            if chain.chain_id == chain_id:
+                return chain.existing_residues.atoms
+    except Exception:
+        pass
+    try:
+        residues = structure_model.residues
+        return residues[residues.chain_ids == chain_id].atoms
+    except Exception:
+        return None
+
+
+def _match_chain_atoms(session, moving_atoms, target_atoms) -> None:
+    try:
+        from chimerax.match_maker.match import CP_SPECIFIC_SPECIFIC, cmd_match
+
+        cmd_match(
+            session,
+            moving_atoms,
+            to=target_atoms,
+            pairing=CP_SPECIFIC_SPECIFIC,
+            show_alignment=False,
+            log_parameters=False,
+        )
+    except Exception:
+        moving_spec = _atom_collection_spec(moving_atoms)
+        target_spec = _atom_collection_spec(target_atoms)
+        if moving_spec is None or target_spec is None:
+            raise
+        run(
+            session,
+            "matchmaker "
+            f"{moving_spec} to {target_spec} pairing ss "
+            "showAlignment false logParameters false",
+        )
+
+
+def _atom_collection_spec(atoms) -> Optional[str]:
+    try:
+        structures = atoms.structures.unique()
+        chain_ids = atoms.residues.unique_chain_ids
+    except Exception:
+        return None
+    if len(structures) != 1 or len(chain_ids) != 1:
+        return None
+    model_spec = _model_spec(structures[0])
+    if model_spec is None:
+        return None
+    from chimerax.atomic import Chain
+
+    return f"{model_spec}{Chain.chain_id_to_atom_spec(chain_ids[0])}"
 
 
 def _group_structures(session, structures, group_name: str):
