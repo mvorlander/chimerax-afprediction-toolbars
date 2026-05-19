@@ -6,6 +6,10 @@
 ![alt text](screenshots/Annotated_screenshot.png)
 This bundle facilitates the analysis of alphafold (multimer) predictions by processing input folders and automatically associating PAE plots to predicted structures. Selection via numeric cutoffs helps to focus on the confident predictions and avoiding spaghetting monsters
 
+## Demo
+
+[Watch a short AF prediction analysis demo](demo/chimerax_af_prediction_demo.mp4).
+
 ## Installation 
 Use one install method only.
 
