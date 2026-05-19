@@ -1,6 +1,6 @@
-# ChimeraX AF Prediction Toolbars
+# ChimeraX AF Prediction Analysis Toolbars
 
-This bundle facilitates the analysis of alphafold (multimer) predictions by processing input folders and automatically associating PAE plots to predicted structures. Selection via numeric cutoffs on PAE or pLDDT values helps to focus on the confident predictions and tame the spaghetti monsters.
+This bundle facilitates the analysis of alphafold (multimer) predictions by processing input folders and automatically associating PAE plots to predicted structures. Selection via numeric cutoffs on PAE or pLDDT values helps to focus on the confident parts of the predictions and tame the spaghetti monsters.
 
 ![Annotated ChimeraX AF toolbar workflow](screenshots/Annotated_screenshot.png)
 
@@ -56,6 +56,7 @@ scripts and does not contain machine-specific paths.
 
 ## AF2/AF3 Workflow
 
+![AF display controller](screenshots/Annotated_screenshot-02.png)
 AF2/AF3 runs open a dedicated `AF Model/PAE Slider` controller. The controller
 has a prediction-run drop-down and a pair slider. The drop-down chooses which
 folder/run is active, and the slider switches the displayed structure and the
@@ -73,30 +74,23 @@ controller drop-down to switch which run's models and PAEs are displayed.
 
 ## Confidence-Based Selection
 
-The controller also includes a `Selection by prediction confidence` section.
+The controller includes a `Selection by prediction confidence` section.
 Use the `Selection mode` switch to choose either PAE or pLDDT; PAE is the
 default. For multimer contacts, choose `All inter-chain pairs` or a specific
 `PAE chain pair`, then use the `PAE cutoff` slider to find residues by their
 minimum PAE to the selected partner chain(s). The default threshold is 10, and
 lower values are more stringent. Moving the slider live-selects matching
-residues. The PAE overlay marks only the below-cutoff inter-chain cells that
-caused those residues to pass the filter, rather than full rows and columns.
+residues. The PAE highlights the currently selected residues with a black outline.
 
 For monomeric predictions or local chain-confidence filtering, switch to pLDDT
 mode and use the `pLDDT cutoff` slider. It selects residues with pLDDT at or
 above the cutoff; the default is 70, and higher values are more stringent.
 
 `Hide Unselected` applies the active confidence filter to every model in the
-current run, hiding atoms, pseudobonds, cartoons, and surfaces outside the
-cutoff while preserving the current display style of matching residues. Bond
-display flags are kept normal so later ChimeraX `show` commands do not reveal
-isolated atoms. `Show Only` applies the active confidence filter to the current
-model only, while `Show All` restores a cartoon-only display for the current
+current run, and hides non-selected residues. `Show Only` applies the active confidence filter to the current model only, while `Show All` restores a cartoon-only display for the current
 model.
 
-The `PAE chain pair` menu does not change which model is displayed. It only
-controls which chain pair is considered by the inter-chain PAE cutoff. For
-example, `A-B` highlights residues whose best PAE contact is between chains A
+The `PAE chain pair` lets you focus the analysis on specific chains. For example, `A-B` highlights residues whose best PAE contact is between chains A
 and B. `All inter-chain pairs` means a residue passes if at least one residue in
 any other chain is below the cutoff; it does not require every chain pair to
 pass. Turn off `Live PAE highlight` to stop live selection and PAE overlays
@@ -127,12 +121,6 @@ mode selected, PAE threshold reset to 10, pLDDT cutoff reset to 70, AF contacts
 max PAE reset to 30, cartoon-only model display, and prepared contact side
 chains shown. Longer active-run path details are kept in the collapsed `Run
 details` panel to keep the controller compact.
-
-## AlphaMissense Mapping
-
-The missense panel fetches AlphaMissense scores directly for a human UniProt
-accession or entry name, associates them with the selected target chain, colors
-the chain by the average AlphaMissense score, and closes the temporary score set.
 
 
 ## Expected Input
@@ -191,6 +179,16 @@ filter, alignment/contact-chain choice, and opened model/data pairs.
 The `Align structures on chain` field is optional. If left blank, the first
 chain detected in each opened structure is used for alignment and contact
 analysis.
+
+## AlphaMissense Mapping
+
+The missense panel fetches AlphaMissense scores directly for a human UniProt
+accession or entry name, associates them with the selected target chain, colors
+the chain by the average AlphaMissense score, and closes the temporary score set.
+
+![AlphaMissense mapping panel](screenshots/Missense_GUI.png)
+
+![AlphaMissense score coloring in ChimeraX](screenshots/Missense_display.png)
 
 ## Compatibility Automation
 
