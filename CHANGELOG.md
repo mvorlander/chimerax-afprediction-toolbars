@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.16
+
+- Added a PAE-mode `Show & Label Contacts` button that displays AlphaFold
+  contact pseudobonds, contact side chains, and residue labels for the active
+  model using the current PAE cutoff and PAE chain-pair dropdown.
+- Keeps contact display separate from interface display and file saving: the
+  new action does not write reports and does not rerun interface highlighting.
+- Stores current contact residue objects so rerunning contact display can clear
+  old contact labels before applying the new cutoff.
+- Added a `Show Cutoff Interfaces` button that runs ChimeraX interfaces on the
+  current PAE chain pair(s), restricted to residues passing the current PAE
+  cutoff, with a user-set chain buried-area cutoff defaulting to 300 A^2.
+
 ## 1.3.15
 
 - Sped up `Hide Unselected` and `Show Only` by updating ChimeraX atom,

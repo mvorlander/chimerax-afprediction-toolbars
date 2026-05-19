@@ -457,6 +457,46 @@ class AFDisplayController(ToolInstance):
         show_all_button.clicked.connect(self._show_all_current_model)
         confidence_button_row.addWidget(show_all_button)
 
+        contact_display_row = QHBoxLayout()
+        pae_group_layout.addLayout(contact_display_row)
+        contact_display_row.addStretch(1)
+        show_contacts_button = QPushButton("Show & Label Contacts", pae_group)
+        show_contacts_button.setToolTip(
+            "Show AlphaFold contact side chains, labels, and pseudobonds for "
+            "the active model using the current PAE cutoff and PAE chain-pair "
+            "selection. No files are written."
+        )
+        show_contacts_button.clicked.connect(self._show_contact_residues)
+        contact_display_row.addWidget(show_contacts_button)
+        self._pae_widgets.append(show_contacts_button)
+
+        interface_display_row = QHBoxLayout()
+        pae_group_layout.addLayout(interface_display_row)
+        interface_area_label = QLabel("Buried area cutoff", pae_group)
+        interface_area_label.setToolTip(
+            "Chain-level buried solvent-accessible surface area cutoff for "
+            "the ChimeraX interfaces command, in square Angstroms."
+        )
+        interface_display_row.addWidget(interface_area_label)
+        self._pae_widgets.append(interface_area_label)
+        self._interface_area_cutoff_entry = QLineEdit(pae_group)
+        self._interface_area_cutoff_entry.setText("300")
+        self._interface_area_cutoff_entry.setPlaceholderText("300")
+        self._interface_area_cutoff_entry.setToolTip(
+            "Default is 300 A^2, matching ChimeraX's chain interface area cutoff."
+        )
+        interface_display_row.addWidget(self._interface_area_cutoff_entry, 1)
+        self._pae_widgets.append(self._interface_area_cutoff_entry)
+        show_interfaces_button = QPushButton("Show Cutoff Interfaces", pae_group)
+        show_interfaces_button.setToolTip(
+            "Run ChimeraX interfaces between the current PAE chain pair(s), "
+            "but only using residues that pass the current PAE cutoff. The "
+            "resulting interface residues are shown as full sticks."
+        )
+        show_interfaces_button.clicked.connect(self._show_cutoff_interfaces)
+        interface_display_row.addWidget(show_interfaces_button)
+        self._pae_widgets.append(show_interfaces_button)
+
         self._sync_confidence_mode_controls()
 
         save_header = QLabel("<b>Save analysis results</b>", parent)
@@ -777,6 +817,20 @@ class AFDisplayController(ToolInstance):
         if self._confidence_mode() == "plddt":
             self._preview_plddt_residues()
 
+    def _interface_area_cutoff(self):
+        text = self._interface_area_cutoff_entry.text().strip()
+        if not text:
+            return 300.0
+        try:
+            value = float(text)
+        except ValueError:
+            raise UserError(
+                f"Buried area cutoff must be a number in square Angstroms, got {text!r}."
+            )
+        if value < 0:
+            raise UserError("Buried area cutoff must be zero or greater.")
+        return value
+
     def _live_pae_highlight_changed(self, *_args):
         if self._confidence_mode() == "pae":
             self._preview_low_pae_residues()
@@ -876,6 +930,47 @@ class AFDisplayController(ToolInstance):
 
     def _show_all_current_model(self):
         self._apply_interchain_pae_visibility("show_all")
+
+    def _show_contact_residues(self):
+        from .workflow import show_contact_residues_for_pair
+
+        run = self._current_run()
+        pair = self._current_pair()
+        if run is None or pair is None:
+            raise UserError("No active AF prediction run is available.")
+        chain_pair = self._current_chain_pair()
+        message = show_contact_residues_for_pair(
+            self.session,
+            pair,
+            requested_chain=run.get("requested_chain"),
+            max_pae=self._pae_threshold(),
+            chain_pair=chain_pair,
+            all_chain_pairs=chain_pair is None,
+        )
+        self._set_status(message)
+        self.session.logger.info(message)
+
+    def _show_cutoff_interfaces(self):
+        from .workflow import show_cutoff_interfaces_for_pair
+
+        run = self._current_run()
+        pair = self._current_pair()
+        pae = self._current_pae()
+        if run is None or pair is None or pae is None:
+            raise UserError("No active AF prediction run and PAE data are available.")
+        chain_pair = self._current_chain_pair()
+        message = show_cutoff_interfaces_for_pair(
+            self.session,
+            pair,
+            pae,
+            requested_chain=run.get("requested_chain"),
+            max_pae=self._pae_threshold(),
+            buried_area_cutoff=self._interface_area_cutoff(),
+            chain_pair=chain_pair,
+            all_chain_pairs=chain_pair is None,
+        )
+        self._set_status(message)
+        self.session.logger.info(message)
 
     def _apply_interchain_pae_visibility(self, mode):
         from .workflow import apply_interchain_pae_visibility
@@ -1101,6 +1196,7 @@ class AFDisplayController(ToolInstance):
         self._plddt_threshold_slider.setValue(70)
         self._plddt_threshold_value_label.setText("70")
         self._plddt_threshold_slider.blockSignals(False)
+        self._interface_area_cutoff_entry.setText("300")
         self._live_pae_highlight.setChecked(True)
         self._live_plddt_highlight.setChecked(False)
         self._plddt_preview_count = None

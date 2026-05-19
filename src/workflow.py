@@ -102,6 +102,10 @@ def run_af_prediction_analysis(
                 "confidence_missing": pair.confidence_missing,
                 "contact_residue_name": contact_result["contact_residue_name"],
                 "interface_residue_name": contact_result["interface_residue_name"],
+                "contact_residues": contact_result.get("contact_residues"),
+                "interface_residues": contact_result.get("interface_residues"),
+                "cutoff_interface_residue_name": None,
+                "cutoff_interface_residues": None,
                 "contact_analysis_files": {},
                 "model": structure_model,
                 "pae": pae,
@@ -577,6 +581,133 @@ def run_contacts_interfaces_for_pair(
     )
 
 
+def show_contact_residues_for_pair(
+    session,
+    display_pair: Dict[str, object],
+    requested_chain: Optional[str] = None,
+    max_pae: Optional[float] = DEFAULT_CONTACT_MAX_PAE,
+    chain_pair=None,
+    all_chain_pairs: bool = False,
+) -> str:
+    model = display_pair.get("model")
+    model_spec = _model_spec(model)
+    if model_spec is None:
+        raise UserError("No active structure model is available for contact display.")
+
+    label = str(display_pair.get("label") or "model")
+    max_pae = _validate_contact_max_pae(max_pae)
+    chain_pairs = _contact_chain_pairs(
+        model,
+        requested_chain=requested_chain,
+        chain_pair=chain_pair,
+        all_chain_pairs=all_chain_pairs,
+    )
+    _delete_residue_labels(session, display_pair.get("contact_residues"))
+    _hide_contact_sidechains(session, display_pair.get("contact_residue_name"))
+
+    safe_label = _safe_token(label)
+    contact_pseudobond_name = f"af_contacts_{safe_label}"
+    contact_residue_name = _contact_residue_name(label)
+    contact_count = 0
+    for pair_index, (chain_a, chain_b) in enumerate(chain_pairs):
+        contact_count += _run_alphafold_contacts_for_chain_pair(
+            session,
+            model,
+            chain_a,
+            chain_b,
+            contact_pseudobond_name,
+            max_pae=max_pae,
+            replace=(pair_index == 0),
+            output_file=None,
+        )
+
+    contact_residues = _contact_residues_from_pseudobonds(
+        model, contact_pseudobond_name
+    )
+    display_pair["contact_residues"] = contact_residues
+    display_pair["contact_residue_name"] = (
+        contact_residue_name if len(contact_residues) > 0 else None
+    )
+    if len(contact_residues) == 0:
+        return (
+            f"No AlphaFold contacts with PAE <= {max_pae:g} were found for "
+            f"{label} on {_chain_pairs_label(chain_pairs)}."
+        )
+
+    _name_residues_from_residues(session, contact_residues, contact_residue_name)
+    _show_contact_sidechains(session, contact_residue_name)
+    _label_contact_residues(session, model, contact_residues)
+    return (
+        f"Shown and labelled {len(contact_residues)} contact residue(s) from "
+        f"{contact_count} AlphaFold contact(s) for {label} on "
+        f"{_chain_pairs_label(chain_pairs)} with PAE <= {max_pae:g}."
+    )
+
+
+def show_cutoff_interfaces_for_pair(
+    session,
+    display_pair: Dict[str, object],
+    pae,
+    requested_chain: Optional[str] = None,
+    max_pae: Optional[float] = DEFAULT_CONTACT_MAX_PAE,
+    buried_area_cutoff: Optional[float] = 300.0,
+    chain_pair=None,
+    all_chain_pairs: bool = False,
+) -> str:
+    model = display_pair.get("model")
+    model_spec = _model_spec(model)
+    if model_spec is None:
+        raise UserError("No active structure model is available for interface display.")
+    if pae is None:
+        raise UserError("No active PAE data is available for interface display.")
+
+    label = str(display_pair.get("label") or "model")
+    max_pae = _validate_contact_max_pae(max_pae)
+    buried_area_cutoff = _validate_buried_area_cutoff(buried_area_cutoff)
+    chain_pairs = _contact_chain_pairs(
+        model,
+        requested_chain=requested_chain,
+        chain_pair=chain_pair,
+        all_chain_pairs=all_chain_pairs,
+    )
+    _delete_residue_labels(session, display_pair.get("cutoff_interface_residues"))
+    _hide_residue_atoms_and_bonds(
+        session, display_pair.get("cutoff_interface_residue_name")
+    )
+
+    interface_residues = _run_cutoff_interfaces_for_chain_pairs(
+        session,
+        model,
+        model_spec,
+        pae,
+        max_pae,
+        chain_pairs,
+        buried_area_cutoff,
+    )
+    display_pair["cutoff_interface_residues"] = interface_residues
+    interface_name = f"cutoff_interface_residues_{_safe_token(label)}"
+    display_pair["cutoff_interface_residue_name"] = (
+        interface_name if len(interface_residues) > 0 else None
+    )
+    if len(interface_residues) == 0:
+        return (
+            f"No interface residues were found for {label} on "
+            f"{_chain_pairs_label(chain_pairs)} using PAE < {max_pae:g} and "
+            f"buried area >= {buried_area_cutoff:g} A^2."
+        )
+
+    _name_residues_from_residues(session, interface_residues, interface_name)
+    run(session, "select " + interface_name)
+    run(session, "show " + interface_name + " atoms")
+    run(session, "show " + interface_name + " bonds")
+    run(session, "style " + interface_name + " stick")
+    return (
+        f"Shown {len(interface_residues)} interface residue(s) for {label} on "
+        f"{_chain_pairs_label(chain_pairs)} using PAE < {max_pae:g} and "
+        f"buried area >= {buried_area_cutoff:g} A^2."
+    )
+
+
 def _prepare_contact_interface_display(
     session, pair_label: str, structure_model, requested_chain: Optional[str]
 ) -> Dict[str, object]:
@@ -771,6 +902,8 @@ def _run_contact_workflow(
     return {
         "contact_residue_name": contact_residue_name if contact_residues_named else None,
         "interface_residue_name": interface_name if update_display and interface_named else None,
+        "contact_residues": contact_residues,
+        "interface_residues": interface_residues,
         "contact_count": len(contact_rows) if write_files else contact_count,
         "interface_residue_count": len(interface_tokens),
         "files": _contact_output_files(
@@ -787,6 +920,8 @@ def _empty_contact_result() -> Dict[str, object]:
     return {
         "contact_residue_name": None,
         "interface_residue_name": None,
+        "contact_residues": None,
+        "interface_residues": None,
         "contact_count": 0,
         "interface_residue_count": 0,
         "files": {},
@@ -1150,15 +1285,22 @@ def _validate_contact_max_pae(max_pae: Optional[float]) -> float:
     return value
 
 
-def _clear_contact_labels(session, contact_residue_name) -> None:
-    if not contact_residue_name:
-        return
+def _validate_buried_area_cutoff(buried_area_cutoff: Optional[float]) -> float:
+    if buried_area_cutoff is None:
+        return 300.0
     try:
-        run(session, f"~label {contact_residue_name} residues")
-    except Exception as err:
-        session.logger.warning(
-            f"Could not clear previous AF contact residue labels: {err}"
+        value = float(buried_area_cutoff)
+    except (TypeError, ValueError):
+        raise UserError(
+            f"Buried area cutoff must be a number, got {buried_area_cutoff!r}."
         )
+    if value < 0:
+        raise UserError("Buried area cutoff must be zero or greater.")
+    return value
+
+
+def _clear_contact_labels(session, contact_residue_name) -> None:
+    return
 
 
 def _contact_residue_name(pair_label: str) -> str:
@@ -1212,6 +1354,26 @@ def _show_contact_sidechains(session, contact_residue_name: str) -> None:
     run(session, f"show {contact_residue_name}&sidechain atoms")
     run(session, f"show {contact_residue_name}&sidechain bonds")
     run(session, f"style {contact_residue_name}&sidechain stick")
+
+
+def _hide_contact_sidechains(session, contact_residue_name) -> None:
+    if not contact_residue_name:
+        return
+    try:
+        run(session, f"hide {contact_residue_name}&sidechain atoms")
+        run(session, f"hide {contact_residue_name}&sidechain bonds")
+    except Exception:
+        pass
+
+
+def _hide_residue_atoms_and_bonds(session, residue_name) -> None:
+    if not residue_name:
+        return
+    try:
+        run(session, f"hide {residue_name} atoms")
+        run(session, f"hide {residue_name} bonds")
+    except Exception:
+        pass
 
 
 def _restore_bond_displays(structure_model) -> None:
@@ -1350,6 +1512,18 @@ def _delete_pseudobond_group(structure_model, pseudobond_name: str) -> None:
         pass
 
 
+def _delete_residue_labels(session, residues) -> None:
+    if residues is None or len(residues) == 0:
+        return
+    try:
+        from chimerax.core.objects import Objects
+        from chimerax.label.label3d import label_delete
+
+        label_delete(session, Objects(atoms=residues.atoms), object_type="residues")
+    except Exception as err:
+        session.logger.warning(f"Could not clear previous AF contact labels: {err}")
+
+
 def _hide_surface_patches_for_atoms(atoms) -> None:
     try:
         from chimerax.atomic import molsurf
@@ -1469,6 +1643,65 @@ def _run_interfaces_for_chain_pairs(session, structure_model, structure_spec: st
                 seen.add(residue)
                 residues.append(residue)
     return Residues(residues)
+
+
+def _run_cutoff_interfaces_for_chain_pairs(
+    session,
+    structure_model,
+    structure_spec: str,
+    pae,
+    max_pae: float,
+    chain_pairs,
+    buried_area_cutoff: float,
+):
+    from chimerax.atomic import Residues
+    from chimerax.interfaces.cmd import interfaces_select
+
+    residues = []
+    seen = set()
+    for chain_a, chain_b in chain_pairs:
+        pae_residues, _cells = _interchain_pae_filter(
+            pae, max_pae, chain_pair=(chain_a, chain_b)
+        )
+        atoms_a = _residues_for_chain(structure_model, pae_residues, chain_a).atoms
+        atoms_b = _residues_for_chain(structure_model, pae_residues, chain_b).atoms
+        if len(atoms_a) == 0 or len(atoms_b) == 0:
+            continue
+        try:
+            pair_residues = interfaces_select(
+                session,
+                atoms=atoms_a,
+                contacting=atoms_b,
+                both_sides=True,
+                area_cutoff=buried_area_cutoff,
+            )
+        except Exception as err:
+            session.logger.warning(
+                f"Could not run interfaces for {structure_spec} chains "
+                f"{chain_a}-{chain_b}: {err}"
+            )
+            continue
+        for residue in pair_residues:
+            if residue not in seen:
+                seen.add(residue)
+                residues.append(residue)
+    return Residues(residues)
+
+
+def _residues_for_chain(structure_model, residues, chain_id: str):
+    from chimerax.atomic import Residues
+
+    if structure_model is None or residues is None:
+        return Residues([])
+    selected = [
+        residue
+        for residue in residues
+        if residue is not None
+        and not getattr(residue, "deleted", False)
+        and getattr(residue, "structure", None) is structure_model
+        and getattr(residue, "chain_id", None) == chain_id
+    ]
+    return Residues(selected)
 
 
 def _residue_display_color(residue) -> Tuple[int, int, int, int]:
