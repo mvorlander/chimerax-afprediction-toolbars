@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.18
+
+- Changed AlphaFold contact PAE-value labels to use the same scene-scaled 3D
+  label style as residue labels instead of fixed screen-size text.
+- Colors each contact PAE-value label with the same color as its pseudobond.
+
 ## 1.3.17
 
 - Added PAE-value text labels to AlphaFold contact pseudobonds.

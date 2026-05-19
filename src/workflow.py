@@ -1650,9 +1650,8 @@ def _label_contact_pseudobonds(session, structure_model, pseudobond_name: str) -
                 Objects(pseudobonds=Pseudobonds([pseudobond])),
                 object_type="pseudobonds",
                 text=f"{pae_value:.1f}",
+                color=tuple(pseudobond.color),
                 bg_color="none",
-                size=28,
-                height="fixed",
             )
             label_count += 1
         return label_count

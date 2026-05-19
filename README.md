@@ -18,7 +18,7 @@ Use one install method only.
    wheel:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.17-py3-none-any.whl
+toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.18-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
