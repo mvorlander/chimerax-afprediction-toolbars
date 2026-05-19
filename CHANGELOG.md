@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.17
+
+- Added PAE-value text labels to AlphaFold contact pseudobonds.
+- Added a `Toggle Contact Labels` button that hides or restores contact
+  residue labels and pseudobond PAE-value labels without rerunning contacts.
+- Renamed `Show Cutoff Interfaces` to `Show interfaces at cutoff` and clarified
+  that ChimeraX interface residues are based on spatial buried-area proximity,
+  while AlphaFold contacts also use prediction-confidence PAE filtering.
+
 ## 1.3.16
 
 - Added a PAE-mode `Show & Label Contacts` button that displays AlphaFold

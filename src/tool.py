@@ -464,11 +464,20 @@ class AFDisplayController(ToolInstance):
         show_contacts_button.setToolTip(
             "Show AlphaFold contact side chains, labels, and pseudobonds for "
             "the active model using the current PAE cutoff and PAE chain-pair "
-            "selection. No files are written."
+            "selection. AlphaFold contacts are based on prediction confidence "
+            "and spatial proximity. No files are written."
         )
         show_contacts_button.clicked.connect(self._show_contact_residues)
         contact_display_row.addWidget(show_contacts_button)
         self._pae_widgets.append(show_contacts_button)
+        toggle_contact_labels_button = QPushButton("Toggle Contact Labels", pae_group)
+        toggle_contact_labels_button.setToolTip(
+            "Hide or restore residue labels and PAE-value labels on the "
+            "currently displayed AlphaFold contact pseudobonds."
+        )
+        toggle_contact_labels_button.clicked.connect(self._toggle_contact_labels)
+        contact_display_row.addWidget(toggle_contact_labels_button)
+        self._pae_widgets.append(toggle_contact_labels_button)
 
         interface_display_row = QHBoxLayout()
         pae_group_layout.addLayout(interface_display_row)
@@ -487,11 +496,13 @@ class AFDisplayController(ToolInstance):
         )
         interface_display_row.addWidget(self._interface_area_cutoff_entry, 1)
         self._pae_widgets.append(self._interface_area_cutoff_entry)
-        show_interfaces_button = QPushButton("Show Cutoff Interfaces", pae_group)
+        show_interfaces_button = QPushButton("Show interfaces at cutoff", pae_group)
         show_interfaces_button.setToolTip(
             "Run ChimeraX interfaces between the current PAE chain pair(s), "
-            "but only using residues that pass the current PAE cutoff. The "
-            "resulting interface residues are shown as full sticks."
+            "but only using residues that pass the current PAE cutoff. "
+            "Interface residues are then based on ChimeraX's spatial buried-area "
+            "criterion, not on AlphaFold contact confidence. The resulting "
+            "interface residues are shown as full sticks."
         )
         show_interfaces_button.clicked.connect(self._show_cutoff_interfaces)
         interface_display_row.addWidget(show_interfaces_button)
@@ -947,6 +958,16 @@ class AFDisplayController(ToolInstance):
             chain_pair=chain_pair,
             all_chain_pairs=chain_pair is None,
         )
+        self._set_status(message)
+        self.session.logger.info(message)
+
+    def _toggle_contact_labels(self):
+        from .workflow import toggle_contact_text_labels
+
+        pair = self._current_pair()
+        if pair is None:
+            raise UserError("No active AF prediction model is available.")
+        message = toggle_contact_text_labels(self.session, pair)
         self._set_status(message)
         self.session.logger.info(message)
 

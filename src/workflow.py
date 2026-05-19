@@ -100,10 +100,14 @@ def run_af_prediction_analysis(
                 "score_path": pair.score_path,
                 "confidence_score": pair.confidence_score,
                 "confidence_missing": pair.confidence_missing,
+                "contact_pseudobond_name": contact_result.get("contact_pseudobond_name"),
                 "contact_residue_name": contact_result["contact_residue_name"],
                 "interface_residue_name": contact_result["interface_residue_name"],
                 "contact_residues": contact_result.get("contact_residues"),
                 "interface_residues": contact_result.get("interface_residues"),
+                "contact_labels_visible": contact_result.get(
+                    "contact_labels_visible", False
+                ),
                 "cutoff_interface_residue_name": None,
                 "cutoff_interface_residues": None,
                 "contact_analysis_files": {},
@@ -602,7 +606,12 @@ def show_contact_residues_for_pair(
         chain_pair=chain_pair,
         all_chain_pairs=all_chain_pairs,
     )
-    _delete_residue_labels(session, display_pair.get("contact_residues"))
+    _delete_contact_text_labels(
+        session,
+        model,
+        display_pair.get("contact_pseudobond_name"),
+        display_pair.get("contact_residues"),
+    )
     _hide_contact_sidechains(session, display_pair.get("contact_residue_name"))
 
     safe_label = _safe_token(label)
@@ -624,10 +633,12 @@ def show_contact_residues_for_pair(
     contact_residues = _contact_residues_from_pseudobonds(
         model, contact_pseudobond_name
     )
+    display_pair["contact_pseudobond_name"] = contact_pseudobond_name
     display_pair["contact_residues"] = contact_residues
     display_pair["contact_residue_name"] = (
         contact_residue_name if len(contact_residues) > 0 else None
     )
+    display_pair["contact_labels_visible"] = False
     if len(contact_residues) == 0:
         return (
             f"No AlphaFold contacts with PAE <= {max_pae:g} were found for "
@@ -637,10 +648,43 @@ def show_contact_residues_for_pair(
     _name_residues_from_residues(session, contact_residues, contact_residue_name)
     _show_contact_sidechains(session, contact_residue_name)
     _label_contact_residues(session, model, contact_residues)
+    pae_label_count = _label_contact_pseudobonds(
+        session, model, contact_pseudobond_name
+    )
+    display_pair["contact_labels_visible"] = True
     return (
         f"Shown and labelled {len(contact_residues)} contact residue(s) from "
         f"{contact_count} AlphaFold contact(s) for {label} on "
         f"{_chain_pairs_label(chain_pairs)} with PAE <= {max_pae:g}."
+        f" Added {pae_label_count} PAE-value pseudobond label(s)."
+    )
+
+
+def toggle_contact_text_labels(session, display_pair: Dict[str, object]) -> str:
+    model = display_pair.get("model")
+    label = str(display_pair.get("label") or "model")
+    pseudobond_name = display_pair.get("contact_pseudobond_name")
+    residues = display_pair.get("contact_residues")
+    if model is None or getattr(model, "deleted", False):
+        raise UserError("No active structure model is available for contact labels.")
+    if not pseudobond_name or _pseudobond_count(model, pseudobond_name) == 0:
+        raise UserError(
+            "No AlphaFold contact pseudobonds are available. Use "
+            "'Show & Label Contacts' first."
+        )
+
+    if display_pair.get("contact_labels_visible", True):
+        _delete_contact_text_labels(session, model, pseudobond_name, residues)
+        display_pair["contact_labels_visible"] = False
+        return f"Hid AlphaFold contact text labels for {label}."
+
+    if residues is not None and len(residues) > 0:
+        _label_contact_residues(session, model, residues)
+    pae_label_count = _label_contact_pseudobonds(session, model, pseudobond_name)
+    display_pair["contact_labels_visible"] = True
+    return (
+        f"Restored AlphaFold contact text labels for {label}: "
+        f"{pae_label_count} PAE-value pseudobond label(s)."
     )
 
 
@@ -887,9 +931,13 @@ def _run_contact_workflow(
         run(session, "show " + interface_name + " atoms")
         run(session, "show " + interface_name + " bonds")
         run(session, "style " + interface_name + " stick")
+    pae_label_count = 0
     if update_display and contact_residues_named:
         _show_contact_sidechains(session, contact_residue_name)
         _label_contact_residues(session, structure_model, contact_residues)
+        pae_label_count = _label_contact_pseudobonds(
+            session, structure_model, contact_pseudobond_name
+        )
 
     if not update_display:
         _delete_pseudobond_group(structure_model, contact_pseudobond_name)
@@ -900,10 +948,14 @@ def _run_contact_workflow(
                 pass
 
     return {
+        "contact_pseudobond_name": contact_pseudobond_name if update_display else None,
         "contact_residue_name": contact_residue_name if contact_residues_named else None,
         "interface_residue_name": interface_name if update_display and interface_named else None,
         "contact_residues": contact_residues,
         "interface_residues": interface_residues,
+        "contact_labels_visible": bool(
+            update_display and contact_residues_named and pae_label_count >= 0
+        ),
         "contact_count": len(contact_rows) if write_files else contact_count,
         "interface_residue_count": len(interface_tokens),
         "files": _contact_output_files(
@@ -918,10 +970,12 @@ def _run_contact_workflow(
 
 def _empty_contact_result() -> Dict[str, object]:
     return {
+        "contact_pseudobond_name": None,
         "contact_residue_name": None,
         "interface_residue_name": None,
         "contact_residues": None,
         "interface_residues": None,
+        "contact_labels_visible": False,
         "contact_count": 0,
         "interface_residue_count": 0,
         "files": {},
@@ -1524,6 +1578,26 @@ def _delete_residue_labels(session, residues) -> None:
         session.logger.warning(f"Could not clear previous AF contact labels: {err}")
 
 
+def _delete_contact_text_labels(
+    session, structure_model, pseudobond_name, residues
+) -> None:
+    _delete_residue_labels(session, residues)
+    if structure_model is None or not pseudobond_name:
+        return
+    pbonds = _pseudobonds_for_group(structure_model, pseudobond_name)
+    if pbonds is None or len(pbonds) == 0:
+        return
+    try:
+        from chimerax.core.objects import Objects
+        from chimerax.label.label3d import label_delete
+
+        label_delete(session, Objects(pseudobonds=pbonds), object_type="pseudobonds")
+    except Exception as err:
+        session.logger.warning(
+            f"Could not clear previous AF contact PAE labels: {err}"
+        )
+
+
 def _hide_surface_patches_for_atoms(atoms) -> None:
     try:
         from chimerax.atomic import molsurf
@@ -1555,6 +1629,68 @@ def _label_contact_residues(session, structure_model, residues) -> None:
         label_model.update_labels()
     except Exception as err:
         session.logger.warning(f"Could not label AF contact residues: {err}")
+
+
+def _label_contact_pseudobonds(session, structure_model, pseudobond_name: str) -> int:
+    pbonds = _pseudobonds_for_group(structure_model, pseudobond_name)
+    if pbonds is None or len(pbonds) == 0:
+        return 0
+    try:
+        from chimerax.atomic import Pseudobonds
+        from chimerax.core.objects import Objects
+        from chimerax.label.label3d import label
+
+        label_count = 0
+        for pseudobond in pbonds:
+            pae_value = _pseudobond_pae_value(structure_model, pseudobond)
+            if pae_value is None:
+                continue
+            label(
+                session,
+                Objects(pseudobonds=Pseudobonds([pseudobond])),
+                object_type="pseudobonds",
+                text=f"{pae_value:.1f}",
+                bg_color="none",
+                size=28,
+                height="fixed",
+            )
+            label_count += 1
+        return label_count
+    except Exception as err:
+        session.logger.warning(
+            f"Could not label AF contact pseudobonds with PAE values: {err}"
+        )
+        return 0
+
+
+def _pseudobond_pae_value(structure_model, pseudobond):
+    pae = getattr(structure_model, "alphafold_pae", None)
+    if pae is None:
+        return None
+    object_a = None
+    object_b = None
+    try:
+        atom_a, atom_b = pseudobond.atoms
+        object_a = _pae_value_object_for_atom(atom_a)
+        object_b = _pae_value_object_for_atom(atom_b)
+        return float(pae.value(object_a, object_b))
+    except Exception:
+        if object_a is None or object_b is None:
+            return None
+        try:
+            return float(pae.value(object_b, object_a))
+        except Exception:
+            return None
+
+
+def _pae_value_object_for_atom(atom):
+    try:
+        from chimerax.alphafold.pae import per_residue_pae
+
+        residue = atom.residue
+        return residue if per_residue_pae(residue) else atom
+    except Exception:
+        return atom
 
 
 def _contact_chain_pairs(
@@ -1782,6 +1918,16 @@ def _pseudobond_count(structure_model, pseudobond_name: str) -> int:
         return len(structure_model.pseudobond_group(pseudobond_name).pseudobonds)
     except Exception:
         return 0
+
+
+def _pseudobonds_for_group(structure_model, pseudobond_name: str):
+    if structure_model is None or not pseudobond_name:
+        return None
+    try:
+        group = structure_model.pseudobond_group(pseudobond_name)
+        return group.pseudobonds
+    except Exception:
+        return None
 
 
 def _selected_residues_for_structure(session, structure_model):
