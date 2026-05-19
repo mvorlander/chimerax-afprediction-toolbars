@@ -7,6 +7,8 @@ This bundle facilitates the analysis of alphafold (multimer) predictions by proc
 ## Demo
 
 [Watch a short AF prediction analysis demo](demo/chimerax_af_prediction_demo.mp4).
+For easier sharing, use the
+[compressed demo video](demo/chimerax_af_prediction_demo_compressed.mp4).
 
 ## Quickstart
 
