@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.19
+
+- Changed `Show Only` to apply the active confidence display filter across all
+  models in the active run.
+- In PAE mode, `Show Only` now also refreshes AlphaFold contact side chains,
+  labels, and pseudobonds for every model at the current PAE threshold.
+- Changed `Show All` to restore the cartoon-only display across all models in
+  the active run.
+- Renamed `Show & Label Contacts` to `Show AF contacts at threshold`.
+
 ## 1.3.18
 
 - Changed AlphaFold contact PAE-value labels to use the same scene-scaled 3D

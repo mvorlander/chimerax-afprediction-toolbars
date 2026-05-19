@@ -670,7 +670,7 @@ def toggle_contact_text_labels(session, display_pair: Dict[str, object]) -> str:
     if not pseudobond_name or _pseudobond_count(model, pseudobond_name) == 0:
         raise UserError(
             "No AlphaFold contact pseudobonds are available. Use "
-            "'Show & Label Contacts' first."
+            "'Show AF contacts at threshold' first."
         )
 
     if display_pair.get("contact_labels_visible", True):

@@ -23,7 +23,7 @@ Use one install method only.
    wheel:
 
 ```text
-toolshed install /path/to/ChimeraX_AFPredictionToolbars-1.3.18-py3-none-any.whl
+toolshed install /path/to/chimerax_afpredictiontoolbars-1.3.19-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -89,8 +89,11 @@ mode and use the `pLDDT cutoff` slider. It selects residues with pLDDT at or
 above the cutoff; the default is 70, and higher values are more stringent.
 
 `Hide Unselected` applies the active confidence filter to every model in the
-current run, and hides non-selected residues. `Show Only` applies the active confidence filter to the current model only, while `Show All` restores a cartoon-only display for the current
-model.
+current run, and hides non-selected residues. `Show Only` applies the active
+confidence filter to every model in the current run; in PAE mode it also
+refreshes AlphaFold contact side chains, labels, and pseudobonds at the current
+PAE threshold. `Show All` restores a cartoon-only display for every model in
+the current run.
 
 The `PAE chain pair` lets you focus the analysis on specific chains. For example, `A-B` highlights residues whose best PAE contact is between chains A
 and B. `All inter-chain pairs` means a residue passes if at least one residue in

@@ -451,16 +451,24 @@ class AFDisplayController(ToolInstance):
         )
         confidence_button_row.addWidget(hide_unselected_button)
         show_only_button = QPushButton("Show Only", pae_group)
+        show_only_button.setToolTip(
+            "Apply the active confidence cutoff to every model in the active "
+            "run. In PAE mode this also refreshes AlphaFold contact side "
+            "chains, labels, and pseudobonds at the current threshold."
+        )
         show_only_button.clicked.connect(self._show_only_confidence_residues)
         confidence_button_row.addWidget(show_only_button)
         show_all_button = QPushButton("Show All", pae_group)
+        show_all_button.setToolTip(
+            "Restore cartoon-only display for every model in the active run."
+        )
         show_all_button.clicked.connect(self._show_all_current_model)
         confidence_button_row.addWidget(show_all_button)
 
         contact_display_row = QHBoxLayout()
         pae_group_layout.addLayout(contact_display_row)
         contact_display_row.addStretch(1)
-        show_contacts_button = QPushButton("Show & Label Contacts", pae_group)
+        show_contacts_button = QPushButton("Show AF contacts at threshold", pae_group)
         show_contacts_button.setToolTip(
             "Show AlphaFold contact side chains, labels, and pseudobonds for "
             "the active model using the current PAE cutoff and PAE chain-pair "
@@ -929,9 +937,9 @@ class AFDisplayController(ToolInstance):
 
     def _show_only_confidence_residues(self):
         if self._confidence_mode() == "pae":
-            self._apply_interchain_pae_visibility("show_only")
+            self._show_only_pae_for_run()
         else:
-            self._apply_plddt_visibility("show_only")
+            self._show_only_plddt_for_run()
 
     def _hide_unselected_confidence_residues(self):
         if self._confidence_mode() == "pae":
@@ -940,7 +948,10 @@ class AFDisplayController(ToolInstance):
             self._hide_unselected_plddt_for_run()
 
     def _show_all_current_model(self):
-        self._apply_interchain_pae_visibility("show_all")
+        if self._confidence_mode() == "pae":
+            self._show_all_pae_for_run()
+        else:
+            self._show_all_plddt_for_run()
 
     def _show_contact_residues(self):
         from .workflow import show_contact_residues_for_pair
@@ -1060,6 +1071,84 @@ class AFDisplayController(ToolInstance):
         )
         self.session.logger.info(self._last_action)
 
+    def _show_only_pae_for_run(self):
+        from .workflow import (
+            apply_interchain_pae_visibility,
+            show_contact_residues_for_pair,
+        )
+
+        run = self._current_run()
+        pairs = self._current_pairs()
+        if run is None or not pairs:
+            raise UserError("No active AF prediction run is available.")
+        threshold = self._pae_threshold()
+        chain_pair = self._current_chain_pair()
+        current_pair = self._current_pair()
+        current_plot = run.get("pae_plot")
+        visibility_count = 0
+        contact_count = 0
+        for pair in pairs:
+            pae = pair.get("pae")
+            if pae is None:
+                continue
+            is_current = pair is current_pair
+            apply_interchain_pae_visibility(
+                self.session,
+                pae,
+                threshold,
+                "show_only",
+                chain_pair=chain_pair,
+                plot=current_plot if is_current else None,
+                select=is_current,
+                highlight=is_current,
+            )
+            visibility_count += 1
+            show_contact_residues_for_pair(
+                self.session,
+                pair,
+                requested_chain=run.get("requested_chain"),
+                max_pae=threshold,
+                chain_pair=chain_pair,
+                all_chain_pairs=chain_pair is None,
+            )
+            contact_count += 1
+        self._set_status(
+            "Applied PAE show-only and refreshed AlphaFold contacts at "
+            f"threshold {threshold:g} for {visibility_count} model(s) in this "
+            f"run. Contact display was refreshed for {contact_count} model(s)."
+        )
+        self.session.logger.info(self._last_action)
+
+    def _show_all_pae_for_run(self):
+        from .workflow import apply_interchain_pae_visibility
+
+        run = self._current_run()
+        pairs = self._current_pairs()
+        if run is None or not pairs:
+            raise UserError("No active AF prediction run is available.")
+        current_pair = self._current_pair()
+        current_plot = run.get("pae_plot")
+        count = 0
+        for pair in pairs:
+            pae = pair.get("pae")
+            if pae is None:
+                continue
+            apply_interchain_pae_visibility(
+                self.session,
+                pae,
+                0,
+                "show_all",
+                chain_pair=self._current_chain_pair(),
+                plot=current_plot if pair is current_pair else None,
+                select=False,
+                highlight=False,
+            )
+            count += 1
+        self._set_status(
+            f"Restored cartoon-only display for {count} PAE model(s) in this run."
+        )
+        self.session.logger.info(self._last_action)
+
     def _hide_unselected_plddt_for_run(self):
         from .workflow import apply_plddt_visibility
 
@@ -1093,6 +1182,50 @@ class AFDisplayController(ToolInstance):
             )
         self._set_status(
             f"Applied pLDDT hide-unselected to {len(messages)} model(s) in this run."
+        )
+        self.session.logger.info(self._last_action)
+
+    def _show_only_plddt_for_run(self):
+        from .workflow import apply_plddt_visibility
+
+        pairs = self._current_pairs()
+        if not pairs:
+            raise UserError("No active AF prediction run is available.")
+        threshold = self._plddt_threshold()
+        current_pair = self._current_pair()
+        count = 0
+        for pair in pairs:
+            apply_plddt_visibility(
+                self.session,
+                pair.get("model"),
+                threshold,
+                "show_only",
+                select=pair is current_pair,
+            )
+            count += 1
+        self._set_status(
+            f"Applied pLDDT show-only to {count} model(s) in this run."
+        )
+        self.session.logger.info(self._last_action)
+
+    def _show_all_plddt_for_run(self):
+        from .workflow import apply_plddt_visibility
+
+        pairs = self._current_pairs()
+        if not pairs:
+            raise UserError("No active AF prediction run is available.")
+        count = 0
+        for pair in pairs:
+            apply_plddt_visibility(
+                self.session,
+                pair.get("model"),
+                self._plddt_threshold(),
+                "show_all",
+                select=False,
+            )
+            count += 1
+        self._set_status(
+            f"Restored cartoon-only display for {count} pLDDT model(s) in this run."
         )
         self.session.logger.info(self._last_action)
 
