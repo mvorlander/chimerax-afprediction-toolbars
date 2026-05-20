@@ -23,7 +23,7 @@ Use one install method only.
    wheel:
 
 ```text
-toolshed install /path/to/chimerax_afpredictiontoolbars-1.3.21-py3-none-any.whl
+toolshed install /path/to/chimerax_afpredictiontoolbars-1.3.22-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -88,7 +88,9 @@ command-line selections, to drive the PAE overlay instead. In this mode, the
 PAE plot highlights the rows and columns corresponding to selected residues in
 the active model. Enable `Only inter-chain PAE` to limit those manual-selection
 overlays to cells where the selected residue is paired with a residue in a
-different chain.
+different chain. Manual-selection overlays use faint row/column stripes for
+context and a stronger block where selected residue ranges intersect in the PAE
+matrix.
 
 For monomeric predictions or local chain-confidence filtering, switch to pLDDT
 mode and use the `pLDDT cutoff` slider. It selects residues with pLDDT at or

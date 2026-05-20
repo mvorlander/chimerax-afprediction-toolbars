@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.22
+
+- Changed selection-synced PAE overlays to draw faint row/column context
+  stripes plus a stronger selected-selected intersection overlay.
+- Keeps the inter-chain-only option while making cross-chain selected residue
+  blocks stand out clearly from the surrounding context stripes.
+
 ## 1.3.21
 
 - Added an `Only inter-chain PAE` checkbox for selection-synced PAE overlays.

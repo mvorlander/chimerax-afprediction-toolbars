@@ -2111,7 +2111,7 @@ def _split_residue_token(token: str) -> Tuple[str, str]:
     return match.group(1), match.group(2)
 
 
-def highlight_pae_cells(plot, cells) -> None:
+def highlight_pae_cells(plot, cells, emphasis_cells=None) -> None:
     _clear_pae_highlight(plot)
     if plot is None or _plot_closed(plot) or not cells:
         return
@@ -2124,8 +2124,13 @@ def highlight_pae_cells(plot, cells) -> None:
     try:
         from Qt.QtGui import QBrush, QColor, QPen
 
-        brush = QBrush(QColor(255, 191, 0, 45))
-        pen = QPen(QColor(0, 0, 0, 180))
+        selection_style = emphasis_cells is not None
+        if selection_style:
+            brush = QBrush(QColor(255, 191, 0, 16))
+            pen = QPen(QColor(0, 0, 0, 45))
+        else:
+            brush = QBrush(QColor(255, 191, 0, 45))
+            pen = QPen(QColor(0, 0, 0, 180))
         items = []
         for top, left, bottom, right in _cell_rectangles(cells):
             items.append(
@@ -2140,6 +2145,25 @@ def highlight_pae_cells(plot, cells) -> None:
             )
         for item in items:
             item.setZValue(2)
+        if emphasis_cells:
+            emphasis_brush = QBrush(QColor(255, 191, 0, 115))
+            emphasis_pen = QPen(QColor(0, 0, 0, 225))
+            try:
+                emphasis_pen.setWidthF(1.4)
+            except Exception:
+                pass
+            for top, left, bottom, right in _cell_rectangles(emphasis_cells):
+                items.append(
+                    scene.addRect(
+                        left,
+                        top,
+                        right - left + 1,
+                        bottom - top + 1,
+                        pen=emphasis_pen,
+                        brush=emphasis_brush,
+                    )
+                )
+                items[-1].setZValue(3)
         plot._af_toolbar_highlight_items = items
     except Exception:
         _clear_pae_highlight(plot)
@@ -2182,6 +2206,7 @@ def highlight_selected_residues_in_pae(
         return Residues([]), f"No selected residues in {structure} map to this PAE plot."
 
     cells = set()
+    emphasis_cells = set()
     size = len(row_residues)
     for index in selected_indices:
         residue = row_residues[index]
@@ -2196,11 +2221,14 @@ def highlight_selected_residues_in_pae(
                     continue
             cells.add((index, paired_index))
             cells.add((paired_index, index))
+            if paired_residue in selected_set:
+                emphasis_cells.add((index, paired_index))
+                emphasis_cells.add((paired_index, index))
     if not cells:
         _clear_pae_highlight(plot)
         scope = "inter-chain PAE cells" if interchain_only else "PAE cells"
         return Residues([]), f"No selected residues map to {scope}."
-    highlight_pae_cells(plot, cells)
+    highlight_pae_cells(plot, cells, emphasis_cells=emphasis_cells)
 
     residues = []
     seen = set()
