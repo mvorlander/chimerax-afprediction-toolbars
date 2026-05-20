@@ -2145,7 +2145,9 @@ def highlight_pae_cells(plot, cells) -> None:
         _clear_pae_highlight(plot)
 
 
-def highlight_selected_residues_in_pae(session, pae, plot=None):
+def highlight_selected_residues_in_pae(
+    session, pae, plot=None, interchain_only: bool = False
+):
     structure = getattr(pae, "structure", None)
     if structure is None or getattr(structure, "deleted", False):
         _clear_pae_highlight(plot)
@@ -2182,9 +2184,22 @@ def highlight_selected_residues_in_pae(session, pae, plot=None):
     cells = set()
     size = len(row_residues)
     for index in selected_indices:
+        residue = row_residues[index]
         for paired_index in range(size):
+            paired_residue = row_residues[paired_index]
+            if interchain_only:
+                if (
+                    paired_residue is None
+                    or getattr(paired_residue, "deleted", False)
+                    or residue.chain_id == paired_residue.chain_id
+                ):
+                    continue
             cells.add((index, paired_index))
             cells.add((paired_index, index))
+    if not cells:
+        _clear_pae_highlight(plot)
+        scope = "inter-chain PAE cells" if interchain_only else "PAE cells"
+        return Residues([]), f"No selected residues map to {scope}."
     highlight_pae_cells(plot, cells)
 
     residues = []
@@ -2196,7 +2211,8 @@ def highlight_selected_residues_in_pae(session, pae, plot=None):
             seen.add(residue)
     return (
         Residues(residues),
-        f"Highlighted PAE rows and columns for {len(residues)} selected residue(s).",
+        f"Highlighted {'inter-chain ' if interchain_only else ''}PAE rows and "
+        f"columns for {len(residues)} selected residue(s).",
     )
 
 

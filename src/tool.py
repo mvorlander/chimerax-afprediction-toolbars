@@ -411,6 +411,19 @@ class AFDisplayController(ToolInstance):
         )
         pae_action_row.addWidget(self._sync_pae_to_selection)
 
+        self._sync_pae_interchain_only = QCheckBox("Only inter-chain PAE", pae_group)
+        self._pae_widgets.append(self._sync_pae_interchain_only)
+        self._sync_pae_interchain_only.setChecked(False)
+        self._sync_pae_interchain_only.setToolTip(
+            "When Sync PAE to selection is enabled, limit the PAE overlay to "
+            "cells between different chains. Leave this off to highlight the "
+            "full selected-residue rows and columns."
+        )
+        self._sync_pae_interchain_only.stateChanged.connect(
+            self._sync_pae_interchain_only_changed
+        )
+        pae_action_row.addWidget(self._sync_pae_interchain_only)
+
         plddt_subheader = QLabel("<b>pLDDT confidence</b>", pae_group)
         pae_group_layout.addWidget(plddt_subheader)
 
@@ -896,6 +909,12 @@ class AFDisplayController(ToolInstance):
                 self._clear_current_pae_highlight()
                 self._update_status_strip()
 
+    def _sync_pae_interchain_only_changed(self, *_args):
+        if self._sync_pae_to_selection.isChecked():
+            self._sync_pae_highlight_to_selection()
+        else:
+            self._update_status_strip()
+
     def _add_selection_sync_handler(self):
         if self._selection_sync_handler is not None:
             return
@@ -935,7 +954,10 @@ class AFDisplayController(ToolInstance):
             self._update_status_strip()
             return
         residues, _message = highlight_selected_residues_in_pae(
-            self.session, pae, plot=run.get("pae_plot")
+            self.session,
+            pae,
+            plot=run.get("pae_plot"),
+            interchain_only=self._sync_pae_interchain_only.isChecked(),
         )
         self._preview_count = None
         self._selection_sync_count = len(residues)
@@ -1464,6 +1486,7 @@ class AFDisplayController(ToolInstance):
         self._plddt_threshold_slider.blockSignals(False)
         self._interface_area_cutoff_entry.setText("300")
         self._sync_pae_to_selection.setChecked(False)
+        self._sync_pae_interchain_only.setChecked(False)
         self._live_pae_highlight.setChecked(True)
         self._live_plddt_highlight.setChecked(False)
         self._plddt_preview_count = None
@@ -1541,7 +1564,10 @@ class AFDisplayController(ToolInstance):
             f"pLDDT >= {self._plddt_threshold():g}",
         ]
         if self._sync_pae_to_selection.isChecked():
-            parts.append(f"PAE synced to selection: {self._selection_sync_count or 0}")
+            selection_text = f"PAE synced to selection: {self._selection_sync_count or 0}"
+            if self._sync_pae_interchain_only.isChecked():
+                selection_text += " inter-chain only"
+            parts.append(selection_text)
         elif not self._live_pae_highlight.isChecked():
             parts.append("live highlight off")
         if self._preview_count is not None:

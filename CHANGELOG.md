@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.21
+
+- Added an `Only inter-chain PAE` checkbox for selection-synced PAE overlays.
+- When enabled with `Sync PAE to selection`, manual residue selections only
+  highlight PAE cells where the selected residue is paired with a residue in a
+  different chain.
+- Clears the PAE overlay when an inter-chain-only selection has no valid
+  cross-chain PAE cells, avoiding stale highlights.
+
 ## 1.3.20
 
 - Added a `Sync PAE to selection` checkbox that tracks interactive or
