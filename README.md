@@ -23,7 +23,7 @@ Use one install method only.
    wheel:
 
 ```text
-toolshed install /path/to/chimerax_afpredictiontoolbars-1.3.19-py3-none-any.whl
+toolshed install /path/to/chimerax_afpredictiontoolbars-1.3.20-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -83,6 +83,10 @@ default. For multimer contacts, choose `All inter-chain pairs` or a specific
 minimum PAE to the selected partner chain(s). The default threshold is 10, and
 lower values are more stringent. Moving the slider live-selects matching
 residues. The PAE highlights the currently selected residues with a black outline.
+Use `Sync PAE to selection` when you want manual ChimeraX selections, including
+command-line selections, to drive the PAE overlay instead. In this mode, the
+PAE plot highlights the rows and columns corresponding to selected residues in
+the active model.
 
 For monomeric predictions or local chain-confidence filtering, switch to pLDDT
 mode and use the `pLDDT cutoff` slider. It selects residues with pLDDT at or
@@ -99,7 +103,9 @@ The `PAE chain pair` lets you focus the analysis on specific chains. For example
 and B. `All inter-chain pairs` means a residue passes if at least one residue in
 any other chain is below the cutoff; it does not require every chain pair to
 pass. Turn off `Live PAE highlight` to stop live selection and PAE overlays
-while still using the cutoff for `Show Only`.
+while still using the cutoff for `Show Only`. Turning on `Sync PAE to
+selection` disables cutoff live selection so manual selection and cutoff
+previewing do not overwrite each other.
 
 ## Analysis Results and Export
 

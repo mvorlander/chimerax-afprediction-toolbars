@@ -1283,8 +1283,30 @@ def save_chimerax_session(
     output_dir.mkdir(parents=True, exist_ok=True)
     filename = _saved_filename("session", pair_label, suffix, ".cxs", timestamp)
     path = _unique_path(output_dir / filename)
-    run(session, "save " + quote_if_necessary(str(path)))
+    _save_session_without_tool_state(session, path)
     return path
+
+
+def _save_session_without_tool_state(session, path: Path):
+    """Save analysis sessions without serializing transient GUI tools."""
+    tool_states = []
+    for tool in session.tools.list():
+        tool_states.append((tool, getattr(tool, "SESSION_SAVE", None)))
+        try:
+            tool.SESSION_SAVE = False
+        except Exception:
+            pass
+    try:
+        run(session, "save " + quote_if_necessary(str(path)))
+    finally:
+        for tool, session_save in tool_states:
+            try:
+                if session_save is None:
+                    delattr(tool, "SESSION_SAVE")
+                else:
+                    tool.SESSION_SAVE = session_save
+            except Exception:
+                pass
 
 
 def _saved_filename(prefix: str, pair_label: str, suffix: str, extension: str, timestamp: bool) -> str:
@@ -2123,6 +2145,65 @@ def highlight_pae_cells(plot, cells) -> None:
         _clear_pae_highlight(plot)
 
 
+def highlight_selected_residues_in_pae(session, pae, plot=None):
+    structure = getattr(pae, "structure", None)
+    if structure is None or getattr(structure, "deleted", False):
+        _clear_pae_highlight(plot)
+        return (), "The active PAE plot is not associated with an open structure."
+
+    from chimerax.atomic import Residues, selected_residues
+
+    selected = [
+        residue
+        for residue in selected_residues(session)
+        if residue is not None
+        and not getattr(residue, "deleted", False)
+        and getattr(residue, "structure", None) is structure
+    ]
+    if not selected:
+        _clear_pae_highlight(plot)
+        return Residues([]), f"No selected residues are in {structure}."
+
+    selected_set = set(selected)
+    row_residues = [
+        _residue_for_pae_row(row) for row in pae.row_residues_or_atoms()
+    ]
+    selected_indices = [
+        index
+        for index, residue in enumerate(row_residues)
+        if residue is not None
+        and not getattr(residue, "deleted", False)
+        and residue in selected_set
+    ]
+    if not selected_indices:
+        _clear_pae_highlight(plot)
+        return Residues([]), f"No selected residues in {structure} map to this PAE plot."
+
+    cells = set()
+    size = len(row_residues)
+    for index in selected_indices:
+        for paired_index in range(size):
+            cells.add((index, paired_index))
+            cells.add((paired_index, index))
+    highlight_pae_cells(plot, cells)
+
+    residues = []
+    seen = set()
+    for index in selected_indices:
+        residue = row_residues[index]
+        if residue not in seen:
+            residues.append(residue)
+            seen.add(residue)
+    return (
+        Residues(residues),
+        f"Highlighted PAE rows and columns for {len(residues)} selected residue(s).",
+    )
+
+
+def clear_pae_highlight(plot) -> None:
+    _clear_pae_highlight(plot)
+
+
 def _clear_pae_highlight(plot) -> None:
     if plot is None:
         return
@@ -2420,7 +2501,12 @@ def _group_structures(session, structures, group_name: str):
     if not structures:
         return None
     try:
-        return session.models.add_group(structures, name=group_name)
+        from chimerax.core.models import Model
+
+        group = Model(group_name, session)
+        session.models.add([group])
+        session.models.add(structures, parent=group)
+        return group
     except Exception as err:
         session.logger.warning(f"Could not group opened AF models: {err}")
         return None

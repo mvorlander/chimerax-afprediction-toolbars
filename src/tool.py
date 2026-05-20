@@ -234,6 +234,8 @@ class AFDisplayController(ToolInstance):
         self._last_action = "Ready."
         self._preview_count = None
         self._plddt_preview_count = None
+        self._selection_sync_count = None
+        self._selection_sync_handler = None
 
         self.tool_window = tw = MainToolWindow(self)
         parent = tw.ui_area
@@ -394,6 +396,20 @@ class AFDisplayController(ToolInstance):
         )
         self._live_pae_highlight.stateChanged.connect(self._live_pae_highlight_changed)
         pae_action_row.addWidget(self._live_pae_highlight)
+
+        self._sync_pae_to_selection = QCheckBox("Sync PAE to selection", pae_group)
+        self._pae_widgets.append(self._sync_pae_to_selection)
+        self._sync_pae_to_selection.setChecked(False)
+        self._sync_pae_to_selection.setToolTip(
+            "When enabled, ChimeraX residue selections made in the structure "
+            "or command line highlight the corresponding rows and columns in "
+            "the active PAE plot. This switches the PAE overlay from cutoff "
+            "previewing to manual selection tracking."
+        )
+        self._sync_pae_to_selection.stateChanged.connect(
+            self._sync_pae_to_selection_changed
+        )
+        pae_action_row.addWidget(self._sync_pae_to_selection)
 
         plddt_subheader = QLabel("<b>pLDDT confidence</b>", pae_group)
         pae_group_layout.addWidget(plddt_subheader)
@@ -638,6 +654,7 @@ class AFDisplayController(ToolInstance):
 
     def delete(self):
         self._deleted = True
+        self._remove_selection_sync_handler()
         super().delete()
 
     def _unique_run_label(self, result):
@@ -851,8 +868,85 @@ class AFDisplayController(ToolInstance):
         return value
 
     def _live_pae_highlight_changed(self, *_args):
+        if (
+            self._live_pae_highlight.isChecked()
+            and self._sync_pae_to_selection.isChecked()
+        ):
+            self._sync_pae_to_selection.setChecked(False)
         if self._confidence_mode() == "pae":
             self._preview_low_pae_residues()
+
+    def _sync_pae_to_selection_changed(self, *_args):
+        if self._sync_pae_to_selection.isChecked():
+            if self._live_pae_highlight.isChecked():
+                self._live_pae_highlight.blockSignals(True)
+                self._live_pae_highlight.setChecked(False)
+                self._live_pae_highlight.blockSignals(False)
+            self._add_selection_sync_handler()
+            self._sync_pae_highlight_to_selection()
+        else:
+            self._remove_selection_sync_handler()
+            self._selection_sync_count = None
+            if (
+                self._confidence_mode() == "pae"
+                and self._live_pae_highlight.isChecked()
+            ):
+                self._preview_low_pae_residues()
+            else:
+                self._clear_current_pae_highlight()
+                self._update_status_strip()
+
+    def _add_selection_sync_handler(self):
+        if self._selection_sync_handler is not None:
+            return
+        from chimerax.core.selection import SELECTION_CHANGED
+
+        self._selection_sync_handler = self.session.triggers.add_handler(
+            SELECTION_CHANGED, self._selection_changed
+        )
+
+    def _remove_selection_sync_handler(self):
+        handler = self._selection_sync_handler
+        if handler is None:
+            return
+        self._selection_sync_handler = None
+        try:
+            self.session.triggers.remove_handler(handler)
+        except Exception:
+            pass
+
+    def _selection_changed(self, *_args):
+        if self._sync_pae_to_selection.isChecked():
+            self._sync_pae_highlight_to_selection()
+
+    def _sync_pae_highlight_to_selection(self):
+        from .workflow import highlight_selected_residues_in_pae
+
+        if (
+            self._confidence_mode() != "pae"
+            or not self._sync_pae_to_selection.isChecked()
+        ):
+            return
+        pae = self._current_pae()
+        run = self._current_run()
+        if pae is None or run is None:
+            self._selection_sync_count = None
+            self._clear_current_pae_highlight()
+            self._update_status_strip()
+            return
+        residues, _message = highlight_selected_residues_in_pae(
+            self.session, pae, plot=run.get("pae_plot")
+        )
+        self._preview_count = None
+        self._selection_sync_count = len(residues)
+        self._update_status_strip()
+
+    def _clear_current_pae_highlight(self):
+        from .workflow import clear_pae_highlight
+
+        run = self._current_run()
+        if run is not None:
+            clear_pae_highlight(run.get("pae_plot"))
 
     def _live_plddt_highlight_changed(self, *_args):
         if self._confidence_mode() == "plddt":
@@ -871,9 +965,15 @@ class AFDisplayController(ToolInstance):
         return _confidence_mode_label_for_value(self._confidence_mode())
 
     def _confidence_mode_changed(self, *_args):
+        if (
+            self._confidence_mode() != "pae"
+            and self._sync_pae_to_selection.isChecked()
+        ):
+            self._sync_pae_to_selection.setChecked(False)
         self._sync_confidence_mode_controls()
         self._preview_count = None
         self._plddt_preview_count = None
+        self._selection_sync_count = None
         if self._confidence_mode() == "pae":
             self._preview_low_pae_residues()
         else:
@@ -892,6 +992,9 @@ class AFDisplayController(ToolInstance):
         if self._confidence_mode() != "pae":
             self._preview_count = None
             self._update_status_strip()
+            return
+        if self._sync_pae_to_selection.isChecked():
+            self._sync_pae_highlight_to_selection()
             return
         pae = self._current_pae()
         run = self._current_run()
@@ -1018,6 +1121,7 @@ class AFDisplayController(ToolInstance):
             mode,
             chain_pair=self._current_chain_pair(),
             plot=self._current_run().get("pae_plot") if self._current_run() else None,
+            highlight=not self._sync_pae_to_selection.isChecked(),
         )
         if mode != "show_all":
             self._preview_low_pae_residues()
@@ -1035,6 +1139,7 @@ class AFDisplayController(ToolInstance):
         chain_pair = self._current_chain_pair()
         current_pair = self._current_pair()
         current_plot = run.get("pae_plot")
+        sync_selection = self._sync_pae_to_selection.isChecked()
         messages = []
         for pair in pairs:
             if pair is current_pair:
@@ -1063,9 +1168,11 @@ class AFDisplayController(ToolInstance):
                     chain_pair=chain_pair,
                     plot=current_plot,
                     select=True,
-                    highlight=True,
+                    highlight=not sync_selection,
                 )
             )
+        if sync_selection:
+            self._sync_pae_highlight_to_selection()
         self._set_status(
             f"Applied PAE hide-unselected to {len(messages)} model(s) in this run."
         )
@@ -1085,6 +1192,7 @@ class AFDisplayController(ToolInstance):
         chain_pair = self._current_chain_pair()
         current_pair = self._current_pair()
         current_plot = run.get("pae_plot")
+        sync_selection = self._sync_pae_to_selection.isChecked()
         visibility_count = 0
         contact_count = 0
         for pair in pairs:
@@ -1100,7 +1208,7 @@ class AFDisplayController(ToolInstance):
                 chain_pair=chain_pair,
                 plot=current_plot if is_current else None,
                 select=is_current,
-                highlight=is_current,
+                highlight=is_current and not sync_selection,
             )
             visibility_count += 1
             show_contact_residues_for_pair(
@@ -1112,6 +1220,8 @@ class AFDisplayController(ToolInstance):
                 all_chain_pairs=chain_pair is None,
             )
             contact_count += 1
+        if sync_selection:
+            self._sync_pae_highlight_to_selection()
         self._set_status(
             "Applied PAE show-only and refreshed AlphaFold contacts at "
             f"threshold {threshold:g} for {visibility_count} model(s) in this "
@@ -1144,6 +1254,8 @@ class AFDisplayController(ToolInstance):
                 highlight=False,
             )
             count += 1
+        if self._sync_pae_to_selection.isChecked():
+            self._sync_pae_highlight_to_selection()
         self._set_status(
             f"Restored cartoon-only display for {count} PAE model(s) in this run."
         )
@@ -1351,9 +1463,11 @@ class AFDisplayController(ToolInstance):
         self._plddt_threshold_value_label.setText("70")
         self._plddt_threshold_slider.blockSignals(False)
         self._interface_area_cutoff_entry.setText("300")
+        self._sync_pae_to_selection.setChecked(False)
         self._live_pae_highlight.setChecked(True)
         self._live_plddt_highlight.setChecked(False)
         self._plddt_preview_count = None
+        self._selection_sync_count = None
         self._current_pair_index = 0
         self._populate_pair_menu()
         self._chain_pair_menu.setCurrentIndex(0)
@@ -1426,7 +1540,9 @@ class AFDisplayController(ToolInstance):
             f"PAE < {self._pae_threshold():g}",
             f"pLDDT >= {self._plddt_threshold():g}",
         ]
-        if not self._live_pae_highlight.isChecked():
+        if self._sync_pae_to_selection.isChecked():
+            parts.append(f"PAE synced to selection: {self._selection_sync_count or 0}")
+        elif not self._live_pae_highlight.isChecked():
             parts.append("live highlight off")
         if self._preview_count is not None:
             parts.append(f"PAE highlighted: {self._preview_count}")

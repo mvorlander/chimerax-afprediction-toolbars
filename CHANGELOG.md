@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.20
+
+- Added a `Sync PAE to selection` checkbox that tracks interactive or
+  command-line ChimeraX residue selections and highlights the corresponding
+  rows and columns in the active PAE plot.
+- Made PAE cutoff live highlighting and manual-selection PAE syncing switch
+  cleanly: enabling selection sync turns off cutoff live selection, and
+  re-enabling cutoff live selection turns off selection sync.
+- Clears stale PAE overlays when the active model has no selected residues or
+  when switching away from PAE mode.
+
 ## 1.3.19
 
 - Changed `Show Only` to apply the active confidence display filter across all
