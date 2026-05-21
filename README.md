@@ -1,8 +1,8 @@
 # ChimeraX AF Prediction Analysis Toolbars
 
-This bundle facilitates the analysis of alphafold (multimer) predictions by processing input folders and automatically associating PAE plots to predicted structures. Selection via numeric cutoffs on PAE or pLDDT values helps to focus on the confident parts of the predictions and tame the spaghetti monsters.
+This bundle facilitates the analysis of AlphaFold and AlphaFold-Multimer predictions by processing input folders and automatically associating PAE plots with predicted structures. Selection via numeric cutoffs on PAE or pLDDT values helps focus inspection on confident model regions, predicted interfaces, and lower-confidence regions that need care.
 
-![Annotated ChimeraX AF toolbar workflow](screenshots/Annotated_screenshot.png)
+![Annotated ChimeraX AF toolbar workflow](screenshots/Annotated_screenshot-01.png)
 
 ## Demo
 
@@ -117,11 +117,15 @@ Opening a prediction run prepares ChimeraX contact/interface display for every
 model, but does not write contact/interface files to disk. The `Save analysis
 results` section contains `Save Contacts and Interfaces` for writing formatted
 contact and interface reports for the active model to the active run's output
-folder. The `AF contacts PAE cutoff` slider controls how stringent ChimeraX's
-`alphafold contacts` command is for that save; lower values keep only more
-confident contacts. Rerunning contacts/interfaces removes old AF-contact residue
-labels before relabeling the current result. Interface residues are shown as
-connected residue sticks on top of the cartoon model.
+folder. Saved AlphaFold contact reports use the current `PAE cutoff`, and the
+contacts scope menu chooses either all chain pairs or the currently selected
+`PAE chain pair`. Lower PAE values are more stringent. Interface residues are
+shown as connected residue sticks on top of the cartoon model.
+
+Use `Show AF contacts at threshold` to refresh the displayed side chains,
+pseudobonds, and labels for the current PAE cutoff without writing files.
+Rerunning this display action removes old AF-contact residue labels before
+labeling the current result.
 
 Use `Save PNG` to save the current 3D view as a transparent-background PNG in
 the active run's output folder. Use `Save Session` to save a ChimeraX `.cxs`
@@ -132,10 +136,10 @@ controls whether saved PNG/session filenames include a timestamp.
 closes the active run's models and PAE plot without disturbing other loaded
 runs. `Reset Active Run` restores the active run to its initial slider/display
 state: first model selected, one model visible, all chain pairs selected, PAE
-mode selected, PAE threshold reset to 10, pLDDT cutoff reset to 70, AF contacts
-max PAE reset to 30, cartoon-only model display, and prepared contact side
-chains shown. Longer active-run path details are kept in the collapsed `Run
-details` panel to keep the controller compact.
+mode selected, PAE threshold reset to 10, pLDDT cutoff reset to 70, live PAE
+highlighting enabled, manual PAE selection sync disabled, cartoon-only model
+display, and prepared contact side chains shown. Longer active-run path details
+are kept in the collapsed `Run details` panel to keep the controller compact.
 
 
 ## Expected Input
@@ -175,7 +179,7 @@ files are written under:
 
 Formatted reports stay directly in that folder. Raw ChimeraX command output is
 kept separately under `raw/af_contacts/` and `raw/interface_residues/`. Contact
-reports record the `AF contacts max PAE` threshold used for that rerun.
+reports record the current PAE threshold used for that save.
 
 Saved PNG and ChimeraX session files are also written to the active mode folder.
 Their filenames include timestamps only when the display controller's
