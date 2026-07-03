@@ -32,8 +32,9 @@ jobs:
 
       - name: Run source compatibility smoke tests
         run: |
-          python -m py_compile src/tool.py src/workflow.py install_chimerax_bundle.py tests/smoke_test_discovery.py
+          python -m py_compile src/tool.py src/workflow.py src/missense.py install_chimerax_bundle.py tests/smoke_test_discovery.py tests/smoke_test_missense.py
           python tests/smoke_test_discovery.py
+          python tests/smoke_test_missense.py
 
       - name: Report current status
         run: |

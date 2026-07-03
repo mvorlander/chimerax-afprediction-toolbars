@@ -1,5 +1,56 @@
 # Changelog
 
+## 1.3.28
+
+- Added a `Show AlphaMissense color key` option to the Missense panel.
+- The option is enabled by default and adds a ChimeraX color key for the same
+  blue-red AlphaMissense 0 to 1 score scale used to color residues.
+- Added GitHub Actions wheel building on push and manual dispatch.
+
+## 1.3.27
+
+- Fixed UniProt metadata parsing for PDB/RCSB mmCIF files such as `6QX9`.
+- The parser now handles semicolon-delimited multi-line sequence fields inside
+  mmCIF loops, so `_struct_ref` rows stay aligned and chain UniProt accessions
+  are detected correctly.
+
+## 1.3.26
+
+- Changed AlphaMissense all-chain mapping so manual UniProt input is optional.
+- When the UniProt field is blank, the tool reads each chain's UniProt accession
+  from the opened mmCIF file and maps each chain with its own accession.
+- A manually entered UniProt accession now acts as an explicit override.
+
+## 1.3.25
+
+- Added `Apply to All Chains in Model` to the AlphaMissense mapping panel.
+- The selected-chain path remains strict, while the all-chain path maps every
+  protein chain in one structure.
+- All-chain mapping uses the `Model id` field, or the selected/only open
+  structure if the field is blank, and reports mapped and skipped chains.
+
+## 1.3.24
+
+- Added an optional `HT-ColabFold Picker` toolbar action.
+- The picker reads `IPTM_vs_PTM.txt`, regenerates a lightweight interactive
+  `PLOT_peak_vs_iptm_interactive.html`, and opens clicked screen hits in the
+  existing AF Model/PAE Slider.
+- The regenerated plot uses `scaled_PEAKavg` versus `IPTMavg`, sizes points by
+  max IPTM, and marks hits that are missing PDB or JSON data.
+- Uses a native ChimeraX hit table as the robust cross-platform launcher.
+  Generated HTML now uses local `#hit-id` anchors instead of a custom URL
+  scheme, and opened hits are marked in both the table and plot.
+
+## 1.3.23
+
+- Added HT-ColabFold screen-hit support with `All Ranks` and `Top Rank`
+  toolbar actions.
+- The launcher accepts a screen directory and exact numeric hit id, matching
+  files such as `1_..._rank_1.pdb` and `1_..._rank_1.json` without also
+  matching `10_...`.
+- Rank IPTM values from `IPTM_vs_PTM.txt` are displayed as confidence values
+  when available.
+
 ## 1.3.22
 
 - Changed selection-synced PAE overlays to draw faint row/column context

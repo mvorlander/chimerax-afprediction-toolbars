@@ -1,5 +1,5 @@
 <BundleInfo name="ChimeraX-AFPredictionToolbars"
-    version="1.3.22"
+    version="1.3.28"
     package="af3_toolbar"
     minSessionVersion="1"
     maxSessionVersion="1">
@@ -8,12 +8,13 @@
   <Email>matthias.vorlaender@vbc.ac.at</Email>
   <URL>https://github.com/mvorlander/chimerax-afprediction-toolbars</URL>
 
-  <Synopsis>Toolbar buttons for AF2/AF3 inspection and AlphaMissense mapping</Synopsis>
+  <Synopsis>Toolbar buttons for AF2/AF3/HT-ColabFold inspection and AlphaMissense mapping</Synopsis>
   <Description>
 Adds an AF toolbar tab with buttons for inspecting AF2 top-hit/all-hit
-outputs, AF3 top-hit/all-hit prediction folders, and AlphaMissense mapping
-onto one selected protein chain. The bundle contains the workflow logic
-directly in Python and does not depend on external .cxc scripts.
+outputs, AF3 top-hit/all-hit prediction folders, HT-ColabFold screen hits, and
+AlphaMissense mapping onto selected chains or all protein chains in one model.
+The bundle contains the workflow logic directly in Python and does not depend
+on external .cxc scripts.
   </Description>
 
   <Categories>
@@ -26,7 +27,7 @@ directly in Python and does not depend on external .cxc scripts.
 
   <Classifiers>
     <PythonClassifier>Development Status :: 4 - Beta</PythonClassifier>
-    <ChimeraXClassifier>ChimeraX :: Tool :: AF Prediction Launcher :: General :: Inspect AF2 and AF3 prediction outputs and map AlphaMissense scores</ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: Tool :: AF Prediction Launcher :: General :: Inspect AF2, AF3, and HT-ColabFold outputs and map AlphaMissense scores</ChimeraXClassifier>
   </Classifiers>
 
   <Providers manager="toolbar">
@@ -60,11 +61,32 @@ directly in Python and does not depend on external .cxc scripts.
       description="Choose an AF2 prediction folder and open the best detected ranked hit"/>
     <Provider
       tab="AF"
+      section="HT-ColabFold"
+      name="htcf-all"
+      display_name="All Ranks"
+      icon="ht-colabfold-multi.svg"
+      description="Choose an HT-ColabFold screen directory and open all ranks for one numeric hit id"/>
+    <Provider
+      tab="AF"
+      section="HT-ColabFold"
+      name="htcf-top"
+      display_name="Top Rank"
+      icon="ht-colabfold-single.svg"
+      description="Choose an HT-ColabFold screen directory and open rank 1 for one numeric hit id"/>
+    <Provider
+      tab="AF"
+      section="HT-ColabFold"
+      name="htcf-picker"
+      display_name="Picker"
+      icon="ht-colabfold-multi.svg"
+      description="Open an interactive HT-ColabFold PEAK/IPTM screen plot and click hits to analyze"/>
+    <Provider
+      tab="AF"
       section="Annotate"
       name="missense-map"
       display_name="Missense"
       icon="missense.svg"
-      description="Map AlphaMissense scores from a human UniProt entry onto one selected chain"/>
+      description="Map AlphaMissense scores onto one chain or all protein chains using mmCIF UniProt metadata"/>
   </Providers>
 
   <DataFiles>

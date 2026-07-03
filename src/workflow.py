@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 from datetime import datetime
+import html as html_lib
 import json
 from pathlib import Path
 import re
@@ -24,6 +25,9 @@ AF3_JSON_PATTERNS = [
     re.compile(r"(?:^|[_\-.])data[_\-.]?(\d+)(?:[_\-.]|$)", re.IGNORECASE),
 ]
 AF2_RANK_PATTERNS = [
+    re.compile(r"(?:^|[_\-.])rank[_\-.]?(\d+)(?:[_\-.]|$)", re.IGNORECASE),
+]
+HT_COLABFOLD_RANK_PATTERNS = [
     re.compile(r"(?:^|[_\-.])rank[_\-.]?(\d+)(?:[_\-.]|$)", re.IGNORECASE),
 ]
 AF3_SCORE_PATTERNS = [
@@ -170,7 +174,7 @@ def _pairs_for_mode(
 ) -> Tuple[PredictionPair, ...]:
     directory = directory.expanduser()
     if not directory.is_dir():
-        raise UserError(f"Prediction folder not found: {directory}")
+        raise UserError(f"Input folder not found: {directory}")
 
     if mode == "af3-all":
         return tuple(_discover_af3_pairs(directory, prediction_filter, top_only=False))
@@ -182,6 +186,14 @@ def _pairs_for_mode(
         return tuple(_discover_af2_pairs(directory, prediction_filter, top_only=False))
     if mode == "af2-top":
         return tuple(_discover_af2_pairs(directory, prediction_filter, top_only=True))
+    if mode == "htcf-all":
+        return tuple(
+            _discover_ht_colabfold_pairs(directory, prediction_filter, top_only=False)
+        )
+    if mode == "htcf-top":
+        return tuple(
+            _discover_ht_colabfold_pairs(directory, prediction_filter, top_only=True)
+        )
     raise UserError(f"Unknown AF analysis mode: {mode}")
 
 
@@ -374,6 +386,78 @@ def _discover_af2_pairs(
     return pairs
 
 
+def _discover_ht_colabfold_pairs(
+    directory: Path, hit_id_text: str, top_only: bool
+) -> List[PredictionPair]:
+    hit_id = _normalize_ht_colabfold_hit_id(hit_id_text)
+    structure_roots = _preferred_roots(directory, "pdb", "structures")
+    json_roots = _preferred_roots(directory, "json", "scores")
+    structures = _files_with_prefix_many(structure_roots, STRUCTURE_EXTENSIONS, hit_id)
+    score_files = _files_with_prefix_many(json_roots, {JSON_EXTENSION}, hit_id)
+
+    if not structures:
+        available = _available_ht_colabfold_hit_ids(structure_roots)
+        raise UserError(
+            f"No HT-ColabFold PDB files were found for hit id {hit_id!r} in "
+            f"{directory}. Expected files under pdb/ named like "
+            f"'{hit_id}_..._rank_1.pdb'.{available}"
+        )
+    if not score_files:
+        raise UserError(
+            f"Found PDB files for HT-ColabFold hit id {hit_id!r}, but no matching "
+            "archived JSON PAE files were found under json/. The synced model/PAE "
+            "controller requires rank JSON files from the screen output."
+        )
+
+    structures_by_rank = _group_by_id(structures, HT_COLABFOLD_RANK_PATTERNS)
+    scores_by_rank = _group_by_id(score_files, HT_COLABFOLD_RANK_PATTERNS)
+
+    missing_scores = sorted(set(structures_by_rank) - set(scores_by_rank), key=_natural_key)
+    missing_structures = sorted(set(scores_by_rank) - set(structures_by_rank), key=_natural_key)
+    if missing_scores or missing_structures:
+        details = []
+        if missing_scores:
+            details.append(
+                "missing HT-ColabFold JSON for rank(s): "
+                + ", ".join(map(str, missing_scores))
+            )
+        if missing_structures:
+            details.append(
+                "missing HT-ColabFold PDB for rank(s): "
+                + ", ".join(map(str, missing_structures))
+            )
+        raise UserError("HT-ColabFold files are incomplete: " + "; ".join(details))
+
+    ranks = sorted(structures_by_rank, key=_natural_key)
+    if not ranks:
+        raise UserError(
+            f"No ranked HT-ColabFold PDB/JSON pairs were found for hit id {hit_id!r}. "
+            "Expected files such as '<hit>_..._rank_1.pdb' and "
+            "'<hit>_..._rank_1.json' under pdb/ and json/."
+        )
+    if top_only:
+        ranks = [_top_rank(ranks)]
+
+    scores = _ht_colabfold_screen_scores(directory, hit_id)
+    pairs = []
+    for rank in ranks:
+        structure = _one_file(
+            structures_by_rank[rank], "HT-ColabFold PDB", rank, directory
+        )
+        score = _one_file(scores_by_rank[rank], "HT-ColabFold JSON", rank, directory)
+        confidence = scores.get(f"iptm_rank_{rank}", scores.get("iptmavg"))
+        pairs.append(
+            PredictionPair(
+                f"hit_{hit_id}_rank_{rank}",
+                structure,
+                score,
+                confidence_score=confidence,
+                confidence_missing=confidence is None and bool(scores),
+            )
+        )
+    return pairs
+
+
 def _files_matching(root: Path, extensions: Set[str], prediction_filter: str) -> List[Path]:
     return _files_matching_many([root], extensions, prediction_filter)
 
@@ -398,6 +482,332 @@ def _files_matching_many(
             seen.add(key)
             files.append(path)
     return sorted(files, key=lambda path: _natural_key(str(path)))
+
+
+def _files_with_prefix_many(
+    roots: List[Path], extensions: Set[str], hit_id: str
+) -> List[Path]:
+    prefix = f"{hit_id}_"
+    files = []
+    seen = set()
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix.casefold() not in extensions:
+                continue
+            if not path.name.startswith(prefix):
+                continue
+            key = path.resolve()
+            if key in seen:
+                continue
+            seen.add(key)
+            files.append(path)
+    return sorted(files, key=lambda path: _natural_key(str(path)))
+
+
+def _normalize_ht_colabfold_hit_id(hit_id_text: str) -> str:
+    text = str(hit_id_text or "").strip()
+    if not text:
+        raise UserError(
+            "Enter an HT-ColabFold hit id. This is the number before the first "
+            "underscore in screen filenames, for example '1' from "
+            "'1_sp-O75391-..._rank_1.pdb'."
+        )
+    match = re.match(r"^(\d+)(?:_|$)", text)
+    if not match:
+        raise UserError(
+            f"Invalid HT-ColabFold hit id {text!r}. Use the leading number before "
+            "the first underscore, for example '1'."
+        )
+    return str(int(match.group(1)))
+
+
+def _available_ht_colabfold_hit_ids(structure_roots: List[Path]) -> str:
+    hit_ids = set()
+    for root in structure_roots:
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*.pdb"):
+            match = re.match(r"^(\d+)_", path.name)
+            if match:
+                hit_ids.add(int(match.group(1)))
+    if not hit_ids:
+        return ""
+    preview = ", ".join(str(hit_id) for hit_id in sorted(hit_ids)[:20])
+    if len(hit_ids) > 20:
+        preview += f", ... ({len(hit_ids)} total)"
+    return f" Available hit ids include: {preview}."
+
+
+def _ht_colabfold_screen_scores(directory: Path, hit_id: str) -> Dict[str, float]:
+    path = directory / "IPTM_vs_PTM.txt"
+    if not path.is_file():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as stream:
+            rows = csv.DictReader(stream, delimiter="\t")
+            for row in rows:
+                name = str(row.get("NAME") or "").lstrip(">").strip()
+                if not name.startswith(f"{hit_id}_"):
+                    continue
+                scores: Dict[str, float] = {}
+                for source_key, target_key in (
+                    ("IPTMavg", "iptmavg"),
+                    ("PTMavg", "ptmavg"),
+                    ("RATIO", "ratio"),
+                ):
+                    value = _to_float(row.get(source_key))
+                    if value is not None:
+                        scores[target_key] = value
+                for rank, value in enumerate(_split_score_list(row.get("IPTM")), start=1):
+                    scores[f"iptm_rank_{rank}"] = value
+                return scores
+    except Exception:
+        return {}
+    return {}
+
+
+def ht_colabfold_screen_hits(directory: Path) -> Tuple[Dict[str, object], ...]:
+    directory = directory.expanduser()
+    score_path = directory / "IPTM_vs_PTM.txt"
+    if not score_path.is_file():
+        raise UserError(f"HT-ColabFold screen score file not found: {score_path}")
+
+    structure_roots = _preferred_roots(directory, "pdb", "structures")
+    json_roots = _preferred_roots(directory, "json", "scores")
+    structure_hit_ids = _available_hit_id_set(structure_roots, STRUCTURE_EXTENSIONS)
+    json_hit_ids = _available_hit_id_set(json_roots, {JSON_EXTENSION})
+
+    hits = []
+    try:
+        with score_path.open("r", encoding="utf-8-sig", newline="") as stream:
+            rows = csv.DictReader(stream, delimiter="\t")
+            for row in rows:
+                raw_name = str(row.get("NAME") or "").lstrip(">").strip()
+                match = re.match(r"^(\d+)_", raw_name)
+                if not match:
+                    continue
+                hit_id = str(int(match.group(1)))
+                iptm_values = _split_score_list(row.get("IPTM"))
+                peak_values = _split_score_list(row.get("scaled_PEAK"))
+                hit = {
+                    "hit_id": hit_id,
+                    "name": raw_name,
+                    "iptmavg": _to_float(row.get("IPTMavg")),
+                    "ptmavg": _to_float(row.get("PTMavg")),
+                    "ratio": _to_float(row.get("RATIO")),
+                    "peakavg": _to_float(row.get("PEAKavg")),
+                    "scaled_peakavg": _to_float(row.get("scaled_PEAKavg")),
+                    "max_iptm": max(iptm_values) if iptm_values else None,
+                    "max_scaled_peak": max(peak_values) if peak_values else None,
+                    "has_structure": hit_id in structure_hit_ids,
+                    "has_score_data": hit_id in json_hit_ids,
+                }
+                hits.append(hit)
+    except Exception as err:
+        raise UserError(f"Could not read HT-ColabFold screen scores: {err}") from err
+
+    if not hits:
+        raise UserError(f"No HT-ColabFold hits were parsed from {score_path}")
+    return tuple(hits)
+
+
+def write_ht_colabfold_peak_iptm_plot(
+    directory: Path,
+    output_path: Optional[Path] = None,
+    opened_hit_ids: Optional[Set[str]] = None,
+) -> Tuple[Path, Tuple[Dict[str, object], ...]]:
+    directory = directory.expanduser()
+    hits = ht_colabfold_screen_hits(directory)
+    if output_path is None:
+        output_dir = directory / "analysis" / "ht-colabfold_picker"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / "PLOT_peak_vs_iptm_interactive.html"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        _ht_colabfold_peak_iptm_html(hits, directory.name, opened_hit_ids or set()),
+        encoding="utf-8",
+    )
+    return output_path, hits
+
+
+def _available_hit_id_set(roots: List[Path], extensions: Set[str]) -> Set[str]:
+    hit_ids = set()
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix.casefold() not in extensions:
+                continue
+            match = re.match(r"^(\d+)_", path.name)
+            if match:
+                hit_ids.add(str(int(match.group(1))))
+    return hit_ids
+
+
+def _ht_colabfold_peak_iptm_html(
+    hits: Tuple[Dict[str, object], ...], screen_name: str, opened_hit_ids: Set[str]
+) -> str:
+    plot_hits = [
+        hit
+        for hit in hits
+        if hit.get("scaled_peakavg") is not None and hit.get("iptmavg") is not None
+    ]
+    width, height = 860, 620
+    left, right, top, bottom = 80, 30, 40, 80
+    plot_width = width - left - right
+    plot_height = height - top - bottom
+
+    def x_pos(value):
+        return left + max(0.0, min(1.0, float(value))) * plot_width
+
+    def y_pos(value):
+        return top + (1.0 - max(0.0, min(1.0, float(value)))) * plot_height
+
+    points = []
+    for hit in plot_hits:
+        hit_id = str(hit["hit_id"])
+        has_data = bool(hit.get("has_structure") and hit.get("has_score_data"))
+        opened = hit_id in opened_hit_ids
+        radius_source = hit.get("max_iptm")
+        radius = 5.0 + 18.0 * max(0.0, min(1.0, float(radius_source or 0.0)))
+        color_source = hit.get("max_scaled_peak")
+        color = _viridis_like_color(float(color_source or 0.0))
+        opacity = "0.85" if has_data else "0.30"
+        stroke = "#17803d" if opened else "#1f2933"
+        stroke_width = "3.2" if opened else "1.2"
+        marker_class = "hit-point viewed" if opened else "hit-point"
+        href = f"#hit-{html_lib.escape(hit_id)}"
+        title = html_lib.escape(_ht_colabfold_hit_tooltip(hit))
+        label = html_lib.escape(hit_id)
+        x = x_pos(hit["scaled_peakavg"])
+        y = y_pos(hit["iptmavg"])
+        points.append(
+            f'<a href="{href}"><circle class="{marker_class}" cx="{x:.1f}" cy="{y:.1f}" '
+            f'r="{radius:.1f}" fill="{color}" fill-opacity="{opacity}" '
+            f'stroke="{stroke}" stroke-width="{stroke_width}"><title>{title}</title></circle></a>'
+            f'<text x="{x + radius + 2:.1f}" y="{y + 4:.1f}" class="hit-label">{label}</text>'
+        )
+
+    ticks = []
+    for tick in (0, 0.25, 0.5, 0.75, 1.0):
+        x = x_pos(tick)
+        y = y_pos(tick)
+        ticks.append(
+            f'<line x1="{x:.1f}" y1="{top}" x2="{x:.1f}" y2="{top + plot_height}" class="grid"/>'
+            f'<text x="{x:.1f}" y="{top + plot_height + 25}" class="tick" text-anchor="middle">{tick:.2f}</text>'
+            f'<line x1="{left}" y1="{y:.1f}" x2="{left + plot_width}" y2="{y:.1f}" class="grid"/>'
+            f'<text x="{left - 12}" y="{y + 4:.1f}" class="tick" text-anchor="end">{tick:.2f}</text>'
+        )
+
+    rows = []
+    for hit in sorted(hits, key=lambda item: (-(item.get("iptmavg") or -1.0), item["hit_id"])):
+        hit_id = str(hit["hit_id"])
+        status = "ready" if hit.get("has_structure") and hit.get("has_score_data") else "missing JSON/PDB"
+        opened = hit_id in opened_hit_ids
+        row_class = ' class="viewed-row"' if opened else ""
+        opened_text = "opened" if opened else ""
+        rows.append(
+            f"<tr{row_class}>"
+            f'<td id="hit-{html_lib.escape(hit_id)}"><a href="#hit-{html_lib.escape(hit_id)}">{html_lib.escape(hit_id)}</a></td>'
+            f"<td>{html_lib.escape(str(hit.get('name') or ''))}</td>"
+            f"<td>{_format_optional_float(hit.get('iptmavg'))}</td>"
+            f"<td>{_format_optional_float(hit.get('scaled_peakavg'))}</td>"
+            f"<td>{_format_optional_float(hit.get('max_iptm'))}</td>"
+            f"<td>{html_lib.escape(status)}</td>"
+            f"<td>{opened_text}</td>"
+            "</tr>"
+        )
+
+    title = html_lib.escape(f"HT-ColabFold PEAK vs IPTM: {screen_name}")
+    return f"""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{title}</title>
+<style>
+body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 18px; color: #17202a; }}
+h1 {{ font-size: 20px; margin: 0 0 4px 0; }}
+p {{ margin: 4px 0 12px 0; }}
+svg {{ width: 100%; max-width: {width}px; height: auto; border: 1px solid #ccd3da; background: #fff; }}
+.grid {{ stroke: #e3e8ee; stroke-width: 1; }}
+.axis {{ stroke: #26323f; stroke-width: 1.5; }}
+.tick {{ fill: #52606d; font-size: 13px; }}
+.axis-label {{ fill: #26323f; font-size: 15px; font-weight: 600; }}
+.hit-label {{ fill: #1f2933; font-size: 11px; pointer-events: none; }}
+.hit-point {{ cursor: pointer; }}
+.hit-point:hover {{ stroke: #d64545; stroke-width: 3; }}
+.viewed {{ stroke: #17803d; }}
+.viewed-row {{ background: #e3f8e8; }}
+table {{ border-collapse: collapse; margin-top: 18px; width: 100%; font-size: 13px; }}
+th, td {{ border-bottom: 1px solid #d9e2ec; padding: 6px 8px; text-align: left; }}
+th {{ background: #f0f4f8; }}
+a {{ color: #0b63ce; text-decoration: none; font-weight: 600; }}
+</style>
+</head>
+<body>
+<h1>{title}</h1>
+<p>In ChimeraX, use the native picker table to open hits. Plot clicks are best-effort only and jump to the hit row in ordinary web browsers. X axis is scaled_PEAKavg; Y axis is IPTMavg. Dot size reflects max IPTM. Green marks hits already opened in this picker session.</p>
+<svg viewBox="0 0 {width} {height}" role="img" aria-label="{title}">
+{''.join(ticks)}
+<line x1="{left}" y1="{top + plot_height}" x2="{left + plot_width}" y2="{top + plot_height}" class="axis"/>
+<line x1="{left}" y1="{top}" x2="{left}" y2="{top + plot_height}" class="axis"/>
+<text x="{left + plot_width / 2:.1f}" y="{height - 25}" text-anchor="middle" class="axis-label">scaled_PEAKavg</text>
+<text x="22" y="{top + plot_height / 2:.1f}" text-anchor="middle" class="axis-label" transform="rotate(-90 22 {top + plot_height / 2:.1f})">IPTMavg</text>
+{''.join(points)}
+</svg>
+<table>
+<thead><tr><th>Hit id</th><th>Name</th><th>IPTMavg</th><th>scaled_PEAKavg</th><th>max IPTM</th><th>Status</th><th>Opened</th></tr></thead>
+<tbody>{''.join(rows)}</tbody>
+</table>
+</body>
+</html>
+"""
+
+
+def _ht_colabfold_hit_tooltip(hit: Dict[str, object]) -> str:
+    return (
+        f"hit {hit.get('hit_id')}: {hit.get('name')}\n"
+        f"IPTMavg: {_format_optional_float(hit.get('iptmavg'))}\n"
+        f"scaled_PEAKavg: {_format_optional_float(hit.get('scaled_peakavg'))}\n"
+        f"max IPTM: {_format_optional_float(hit.get('max_iptm'))}"
+    )
+
+
+def _format_optional_float(value) -> str:
+    if value is None:
+        return ""
+    return f"{float(value):.4g}"
+
+
+def _viridis_like_color(value: float) -> str:
+    stops = [
+        (68, 1, 84),
+        (59, 82, 139),
+        (33, 145, 140),
+        (94, 201, 98),
+        (253, 231, 37),
+    ]
+    value = max(0.0, min(1.0, value))
+    scaled = value * (len(stops) - 1)
+    index = min(int(scaled), len(stops) - 2)
+    frac = scaled - index
+    start = stops[index]
+    end = stops[index + 1]
+    rgb = tuple(round(start[channel] + (end[channel] - start[channel]) * frac) for channel in range(3))
+    return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+
+
+def _split_score_list(value) -> List[float]:
+    if value is None:
+        return []
+    scores = []
+    for part in str(value).strip().strip(":").split(":"):
+        score = _to_float(part)
+        if score is not None:
+            scores.append(score)
+    return scores
 
 
 def _preferred_roots(directory: Path, *names: str) -> List[Path]:
@@ -444,7 +854,7 @@ def _top_rank(ranks: List[Union[str, int]]) -> Union[str, int]:
     numeric = sorted(rank for rank in ranks if isinstance(rank, int))
     if numeric:
         return numeric[0]
-    raise UserError("Could not identify the top AF2 hit from the detected ranks.")
+    raise UserError("Could not identify the top ranked hit from the detected ranks.")
 
 
 def _score_from_json_file(path: Path) -> Optional[float]:
@@ -2625,6 +3035,8 @@ def _make_output_dir(directory: Path, mode: str, prediction_filter: str) -> Path
 
 
 def _series_title(mode: str, prediction_filter: str, directory: Path) -> str:
+    if mode.startswith("htcf-") and prediction_filter:
+        return f"{_mode_label(mode)} hit {prediction_filter}"
     subject = prediction_filter or directory.name
     return f"{_mode_label(mode)} {subject}"
 
@@ -2636,6 +3048,8 @@ def _mode_label(mode: str) -> str:
         "af3-top": "AF3 top hit",
         "af2-all": "AF2 all hits",
         "af2-top": "AF2 top hit",
+        "htcf-all": "HT-ColabFold all ranks",
+        "htcf-top": "HT-ColabFold top rank",
     }
     return labels.get(mode, mode)
 

@@ -12,10 +12,13 @@ class _AF3ToolbarBundle(BundleAPI):
 
     @staticmethod
     def run_provider(session, name, mgr, **kw):
-        from .tool import AFMissenseTool, AFPredictionLauncher
+        from .tool import AFMissenseTool, AFPredictionLauncher, HTColabFoldPicker
 
         if name == "missense-map":
             AFMissenseTool.get_singleton(session, create=True, display=True)
+            return
+        if name == "htcf-picker":
+            HTColabFoldPicker.get_singleton(session, create=True, display=True)
             return
         tool = AFPredictionLauncher.get_singleton(session, create=True, display=True)
         if name == "af3-all":
@@ -28,6 +31,10 @@ class _AF3ToolbarBundle(BundleAPI):
             tool.set_mode("af2-all", prompt_for_directory=True)
         elif name == "af2-top":
             tool.set_mode("af2-top", prompt_for_directory=True)
+        elif name == "htcf-all":
+            tool.set_mode("htcf-all", prompt_for_directory=True)
+        elif name == "htcf-top":
+            tool.set_mode("htcf-top", prompt_for_directory=True)
         else:
             session.logger.warning(f"Unknown AF toolbar provider: {name}")
 

@@ -23,7 +23,7 @@ Use one install method only.
    wheel:
 
 ```text
-toolshed install /path/to/chimerax_afpredictiontoolbars-1.3.22-py3-none-any.whl
+toolshed install /path/to/chimerax_afpredictiontoolbars-1.3.28-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -45,25 +45,35 @@ Restart ChimeraX after installing from source.
 
 ## Main Features
 
-This bundle adds a small `AF` toolbar tab to ChimeraX with five actions:
+This bundle adds a small `AF` toolbar tab to ChimeraX with eight actions:
 
-- `AF3 All Hits`: opens all detected AF3 `model_N` / `data_N` pairs in a prediction folder.
-- `AF3 Top Hit`: opens the best detected AF3 model. Ranking metadata is used when available; otherwise the lowest model number is used.
+- `AF3 All Hits`: opens all detected AF3 `model_N` / `data_N` pairs in a
+  prediction folder.
+- `AF3 Top Hit`: opens the best detected AF3 model. Ranking metadata is used
+  when available; otherwise the lowest model number is used.
 - `AF2 All Hits`: opens all detected AF2 ranked structure/JSON pairs.
 - `AF2 Top Hit`: opens only the best detected AF2 rank, preferring `rank_1`.
-- `Missense`: maps AlphaMissense scores from a human UniProt entry onto exactly one selected protein chain.
+- `HT-ColabFold All Ranks`: opens all ranked models for one numeric hit id
+  from an HT-ColabFold screen directory.
+- `HT-ColabFold Top Rank`: opens only rank 1 for one numeric hit id from an
+  HT-ColabFold screen directory.
+- `HT-ColabFold Picker`: regenerates a clickable PEAK/IPTM screen plot from
+  `IPTM_vs_PTM.txt` and opens clicked hits in the AF Model/PAE Slider.
+- `Missense`: maps AlphaMissense scores onto one selected protein chain, or
+  onto all protein chains in one structure, using UniProt IDs from mmCIF
+  metadata when available.
 
 The workflow is implemented in bundled Python code. It does not call external `.cxc`
 scripts and does not contain machine-specific paths.
 
-## AF2/AF3 Workflow
+## AF2/AF3/HT-ColabFold Workflow
 
 ![AF display controller](screenshots/Annotated_screenshot-02.png)
-AF2/AF3 runs open a dedicated `AF Model/PAE Slider` controller. The controller
-has a prediction-run drop-down and a pair slider. The drop-down chooses which
-folder/run is active, and the slider switches the displayed structure and the
-displayed PAE matrix together. Each run uses one PAE plot tool and updates the
-plot data when the slider changes. 
+AF2, AF3, and HT-ColabFold screen-hit runs open a dedicated `AF Model/PAE
+Slider` controller. The controller has a prediction-run drop-down and a pair
+slider. The drop-down chooses which folder/run is active, and the slider
+switches the displayed structure and the displayed PAE matrix together. Each run
+uses one PAE plot tool and updates the plot data when the slider changes.
 
 For AF3 all-hit runs, the bundle displays metadata-based confidence scores in
 the model selector when ranking metadata is available. Models with confidence
@@ -103,9 +113,10 @@ refreshes AlphaFold contact side chains, labels, and pseudobonds at the current
 PAE threshold. `Show All` restores a cartoon-only display for every model in
 the current run.
 
-The `PAE chain pair` lets you focus the analysis on specific chains. For example, `A-B` highlights residues whose best PAE contact is between chains A
-and B. `All inter-chain pairs` means a residue passes if at least one residue in
-any other chain is below the cutoff; it does not require every chain pair to
+The `PAE chain pair` lets you focus the analysis on specific chains. For
+example, `A-B` highlights residues whose best PAE contact is between chains A
+and B. `All inter-chain pairs` means a residue passes if at least one residue
+in any other chain is below the cutoff; it does not require every chain pair to
 pass. Turn off `Live PAE highlight` to stop live selection and PAE overlays
 while still using the cutoff for `Show Only`. Turning on `Sync PAE to
 selection` disables cutoff live selection so manual selection and cutoff
@@ -168,6 +179,42 @@ Use the `Name/filter` field when a folder contains outputs for more than one
 prediction. The bundle refuses ambiguous matches and shows the candidate files so
 the filter can be narrowed.
 
+HT-ColabFold screen directories should contain `pdb/` and `json/` subfolders
+with matching rank files. The launcher exposes a `Screen dir` field and a
+`Hit id` field. The hit id is the number before the first underscore in the
+screen filenames:
+
+```text
+pdb/1_sp-O75391-SPAG7_HUMAN_vs_sp-O00267-SPT5H_HUMAN_unrelaxed_rank_1.pdb
+json/1_sp-O75391-SPAG7_HUMAN_vs_sp-O00267-SPT5H_HUMAN_unrelaxed_rank_1.json
+pdb/1_sp-O75391-SPAG7_HUMAN_vs_sp-O00267-SPT5H_HUMAN_unrelaxed_rank_2.pdb
+json/1_sp-O75391-SPAG7_HUMAN_vs_sp-O00267-SPT5H_HUMAN_unrelaxed_rank_2.json
+```
+
+For this example, enter `1` as the hit id. Matching is exact, so `1` does not
+also open `10`. Screen folders that only contain PDB files, PAE images, or old
+non-JSON exports cannot be opened in the synchronized model/PAE controller
+because the controller needs the rank JSON PAE data. If `IPTM_vs_PTM.txt` is
+present, rank-specific IPTM values are shown as confidence values in the model
+selector.
+
+The `HT-ColabFold Picker` button reads `IPTM_vs_PTM.txt`, writes a regenerated
+interactive plot to:
+
+```text
+<screen dir>/analysis/ht-colabfold_picker/PLOT_peak_vs_iptm_interactive.html
+```
+
+The plot uses `scaled_PEAKavg` on the x axis and `IPTMavg` on the y axis, with
+dot size reflecting max IPTM. Use the native hit table below the plot to open
+hits: double-click a row or select a row and click `Open Selected Hit`. This
+table path is the robust, platform-independent launcher. Plot clicking is
+best-effort only; the generated HTML uses local `#hit-id` anchors so ordinary
+web browsers never try to open a custom ChimeraX URL scheme. Hits opened from
+the picker are marked in green in both the table and regenerated plot. The
+picker can open either all ranks or only the top rank, depending on the
+`Open mode` selector.
+
 ## Output
 
 When you click `Save Contacts and Interfaces`, generated contact and interface
@@ -204,6 +251,19 @@ analysis.
 The missense panel fetches AlphaMissense scores directly for a human UniProt
 accession or entry name, associates them with the selected target chain, colors
 the chain by the average AlphaMissense score, and closes the temporary score set.
+Use `Apply to Selected Chain` for strict one-chain mapping. If the UniProt field
+is blank, the tool reads the chain's UniProt accession from mmCIF metadata; the
+field is only an override. Use `Apply to All Chains in Model` to map every
+protein chain in one structure. In all-chain mode, a blank UniProt field means
+each chain uses its own UniProt accession from the mmCIF file. Entering a UniProt
+entry manually overrides the mmCIF metadata and applies that same entry to every
+protein chain. The all-chain mode uses the `Model id` field, or the
+selected/only open structure when the model id is blank, skips chains that cannot
+be mapped, and reports which chains were mapped or skipped.
+
+Enable `Show AlphaMissense color key` to add a ChimeraX color key for the
+blue-red AlphaMissense score scale. The key uses the same 0 to 1 range as the
+structure coloring.
 
 ![AlphaMissense mapping panel](screenshots/Missense_GUI.png)
 

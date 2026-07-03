@@ -14,11 +14,11 @@ cloning the repository, or building the bundle.
 Examples:
 
 ```text
-toolshed install /Users/yourname/Downloads/chimerax_afpredictiontoolbars-1.3.22-py3-none-any.whl
+toolshed install /Users/yourname/Downloads/chimerax_afpredictiontoolbars-1.3.28-py3-none-any.whl
 ```
 
 ```text
-toolshed install C:\Users\yourname\Downloads\chimerax_afpredictiontoolbars-1.3.22-py3-none-any.whl
+toolshed install C:\Users\yourname\Downloads\chimerax_afpredictiontoolbars-1.3.28-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -29,7 +29,7 @@ toolshed install C:\Users\yourname\Downloads\chimerax_afpredictiontoolbars-1.3.2
 Download the newer `.whl` file, then install it with:
 
 ```text
-toolshed install /path/to/chimerax_afpredictiontoolbars-1.3.22-py3-none-any.whl reinstall true
+toolshed install /path/to/chimerax_afpredictiontoolbars-1.3.28-py3-none-any.whl reinstall true
 ```
 
 Restart ChimeraX after upgrading.

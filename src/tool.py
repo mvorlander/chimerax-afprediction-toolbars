@@ -3,7 +3,12 @@ from pathlib import Path
 from chimerax.core.errors import UserError
 from chimerax.core.tools import ToolInstance
 
-from .missense import apply_missense_scores, selected_chain_summary, selected_chain_target
+from .missense import (
+    apply_missense_scores,
+    apply_missense_scores_to_structure,
+    selected_chain_summary,
+    selected_chain_target,
+)
 
 
 MODES = {
@@ -33,6 +38,21 @@ MODES = {
         "description": (
             "Opens the best detected AF2 ranked hit. Rank 1 is preferred; if rank "
             "labels are absent, a single unranked pair is accepted."
+        ),
+    },
+    "htcf-all": {
+        "button_label": "HT-ColabFold all ranks",
+        "description": (
+            "Opens every detected rank for one hit from an HT-ColabFold screen. "
+            "Enter the screen directory and the numeric hit id before the first "
+            "underscore."
+        ),
+    },
+    "htcf-top": {
+        "button_label": "HT-ColabFold top rank",
+        "description": (
+            "Opens rank 1 for one hit from an HT-ColabFold screen. Enter the "
+            "screen directory and the numeric hit id before the first underscore."
         ),
     },
 }
@@ -84,7 +104,8 @@ class AFPredictionLauncher(ToolInstance):
         layout.addWidget(form)
 
         row = 0
-        form_layout.addWidget(QLabel("Prediction folder", form), row, 0)
+        self._directory_label = QLabel("Prediction folder", form)
+        form_layout.addWidget(self._directory_label, row, 0)
         self._directory_entry = QLineEdit(form)
         self._directory_entry.setPlaceholderText("Choose an AF2 or AF3 output folder")
         self._directory_entry.editingFinished.connect(self._refresh_preview)
@@ -94,7 +115,8 @@ class AFPredictionLauncher(ToolInstance):
         form_layout.addWidget(browse_button, row, 2)
 
         row += 1
-        form_layout.addWidget(QLabel("Name/filter", form), row, 0)
+        self._filter_label = QLabel("Name/filter", form)
+        form_layout.addWidget(self._filter_label, row, 0)
         self._prediction_filter_entry = QLineEdit(form)
         self._prediction_filter_entry.setPlaceholderText(
             "Optional text that must appear in matching filenames"
@@ -146,6 +168,7 @@ class AFPredictionLauncher(ToolInstance):
         config = MODES[mode]
         self._title_label.setText(f"<b>{config['button_label']}</b>")
         self._description_label.setText(config["description"])
+        self._sync_mode_labels()
         self._refresh_preview()
 
         if prompt_for_directory:
@@ -153,9 +176,14 @@ class AFPredictionLauncher(ToolInstance):
 
     def _choose_directory(self):
         start_dir = self._directory_entry.text().strip() or str(Path.home())
+        title = (
+            "Choose HT-ColabFold screen directory"
+            if self._is_screen_mode()
+            else "Choose AlphaFold prediction folder"
+        )
         selected = self._file_dialog_class.getExistingDirectory(
             self.tool_window.ui_area,
-            "Choose AlphaFold prediction folder",
+            title,
             start_dir,
         )
         if selected:
@@ -165,9 +193,16 @@ class AFPredictionLauncher(ToolInstance):
     def _refresh_preview(self):
         directory_text = self._directory_entry.text().strip()
         if not directory_text:
-            self._preview.setPlainText(
-                "Choose a folder to preview the model/data pairs that will be opened."
-            )
+            if self._is_screen_mode():
+                message = (
+                    "Choose a screen directory and enter a hit id to preview the "
+                    "ranked model/data pairs that will be opened."
+                )
+            else:
+                message = (
+                    "Choose a folder to preview the model/data pairs that will be opened."
+                )
+            self._preview.setPlainText(message)
             return
 
         try:
@@ -180,6 +215,27 @@ class AFPredictionLauncher(ToolInstance):
             )
         except Exception as err:
             self._preview.setPlainText(str(err))
+
+    def _is_screen_mode(self):
+        return self._mode.startswith("htcf-")
+
+    def _sync_mode_labels(self):
+        if self._is_screen_mode():
+            self._directory_label.setText("Screen dir")
+            self._directory_entry.setPlaceholderText(
+                "Choose an HT-ColabFold screen directory"
+            )
+            self._filter_label.setText("Hit id")
+            self._prediction_filter_entry.setPlaceholderText(
+                "Number before first underscore, e.g. 1"
+            )
+        else:
+            self._directory_label.setText("Prediction folder")
+            self._directory_entry.setPlaceholderText("Choose an AF2 or AF3 output folder")
+            self._filter_label.setText("Name/filter")
+            self._prediction_filter_entry.setPlaceholderText(
+                "Optional text that must appear in matching filenames"
+            )
 
     def _run_analysis(self):
         from .workflow import describe_prediction_folder, run_af_prediction_analysis
@@ -204,6 +260,317 @@ class AFPredictionLauncher(ToolInstance):
         if self._controller is None or getattr(self._controller, "_deleted", False):
             self._controller = AFDisplayController(self.session)
         return self._controller
+
+
+class HTColabFoldPicker(ToolInstance):
+    SESSION_SAVE = False
+
+    def __init__(self, session, tool_name="HT-ColabFold Picker"):
+        super().__init__(session, tool_name)
+
+        from chimerax.ui import MainToolWindow
+        from Qt.QtCore import Qt, QUrl
+        from Qt.QtGui import QColor
+        from Qt.QtWidgets import (
+            QAbstractItemView,
+            QFileDialog,
+            QComboBox,
+            QHBoxLayout,
+            QLabel,
+            QLineEdit,
+            QPushButton,
+            QTableWidget,
+            QTableWidgetItem,
+            QVBoxLayout,
+        )
+
+        self.tool_window = tw = MainToolWindow(self, close_destroys=False)
+        parent = tw.ui_area
+        self._file_dialog_class = QFileDialog
+        self._qt = Qt
+        self._table_item_class = QTableWidgetItem
+        self._opened_background = QColor("#e3f8e8")
+        self._qurl_class = QUrl
+        self._plot_path = None
+        self._plot_html = ""
+        self._hits = ()
+        self._opened_hit_ids = set()
+
+        layout = QVBoxLayout(parent)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        title = QLabel("<b>HT-ColabFold screen picker</b>", parent)
+        layout.addWidget(title)
+        description = QLabel(
+            "Loads IPTM_vs_PTM.txt, regenerates a clickable PEAK/IPTM plot, "
+            "and opens the clicked hit with the AF Model/PAE Slider.",
+            parent,
+        )
+        description.setWordWrap(True)
+        layout.addWidget(description)
+
+        folder_row = QHBoxLayout()
+        layout.addLayout(folder_row)
+        folder_row.addWidget(QLabel("Screen dir", parent))
+        self._directory_entry = QLineEdit(parent)
+        self._directory_entry.setPlaceholderText("Choose an HT-ColabFold screen directory")
+        folder_row.addWidget(self._directory_entry, 1)
+        browse_button = QPushButton("Browse...", parent)
+        browse_button.clicked.connect(self._choose_directory)
+        folder_row.addWidget(browse_button)
+
+        control_row = QHBoxLayout()
+        layout.addLayout(control_row)
+        control_row.addWidget(QLabel("Open mode", parent))
+        self._mode_combo = QComboBox(parent)
+        self._mode_combo.addItem("All ranks", "htcf-all")
+        self._mode_combo.addItem("Top rank", "htcf-top")
+        control_row.addWidget(self._mode_combo)
+        load_button = QPushButton("Load Plot", parent)
+        load_button.clicked.connect(self._load_plot)
+        control_row.addWidget(load_button)
+        browser_button = QPushButton("Open HTML", parent)
+        browser_button.clicked.connect(self._open_html_in_browser)
+        control_row.addWidget(browser_button)
+        control_row.addStretch(1)
+
+        self._status_label = QLabel("Choose a screen directory and load the plot.", parent)
+        self._status_label.setWordWrap(True)
+        layout.addWidget(self._status_label)
+
+        self._plot_widget = self._make_plot_widget(parent)
+        layout.addWidget(self._plot_widget, 1)
+
+        self._hit_table = QTableWidget(parent)
+        self._hit_table.setColumnCount(6)
+        self._hit_table.setHorizontalHeaderLabels(
+            ["Hit id", "IPTMavg", "scaled_PEAKavg", "Status", "Opened", "Name"]
+        )
+        self._hit_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._hit_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._hit_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._hit_table.itemDoubleClicked.connect(
+            lambda item: self._open_hit_from_row(item.row())
+        )
+        layout.addWidget(self._hit_table, 1)
+
+        table_row = QHBoxLayout()
+        layout.addLayout(table_row)
+        open_selected_button = QPushButton("Open Selected Hit", parent)
+        open_selected_button.clicked.connect(self._open_selected_hit)
+        table_row.addWidget(open_selected_button)
+        table_row.addStretch(1)
+
+        tw.manage(placement="side")
+
+    @classmethod
+    def get_singleton(cls, session, create=True, display=False):
+        from chimerax.core import tools
+
+        return tools.get_singleton(
+            session, cls, "HT-ColabFold Picker", create=create, display=display
+        )
+
+    def _make_plot_widget(self, parent):
+        try:
+            from Qt.QtWebEngineWidgets import QWebEngineView
+
+            widget = QWebEngineView(parent)
+            widget.urlChanged.connect(self._handle_url)
+            self._web_engine_available = True
+            return widget
+        except Exception:
+            from Qt.QtWidgets import QTextBrowser
+
+            widget = QTextBrowser(parent)
+            widget.setOpenLinks(False)
+            widget.anchorClicked.connect(self._handle_url)
+            self._web_engine_available = False
+            return widget
+
+    def _choose_directory(self):
+        start_dir = self._directory_entry.text().strip() or str(Path.home())
+        selected = self._file_dialog_class.getExistingDirectory(
+            self.tool_window.ui_area,
+            "Choose HT-ColabFold screen directory",
+            start_dir,
+        )
+        if selected:
+            self._directory_entry.setText(selected)
+            self._load_plot()
+
+    def _load_plot(self):
+        from .workflow import write_ht_colabfold_peak_iptm_plot
+
+        directory = Path(self._directory_entry.text().strip()).expanduser()
+        try:
+            plot_path, hits = write_ht_colabfold_peak_iptm_plot(
+                directory, opened_hit_ids=self._opened_hit_ids
+            )
+        except Exception as err:
+            self._status_label.setText(str(err))
+            return
+
+        self._plot_path = plot_path
+        self._hits = hits
+        self._plot_html = plot_path.read_text(encoding="utf-8")
+        ready = sum(1 for hit in hits if hit.get("has_structure") and hit.get("has_score_data"))
+        self._status_label.setText(
+            f"Loaded {len(hits)} hits; {ready} have PDB and JSON files. "
+            f"Interactive HTML written to {plot_path}."
+        )
+        self._populate_hit_table()
+        self._set_plot_html()
+
+    def _populate_hit_table(self):
+        hits = sorted(
+            self._hits,
+            key=lambda hit: (-(hit.get("iptmavg") or -1.0), _natural_hit_id(hit)),
+        )
+        self._hit_table.setRowCount(len(hits))
+        for row, hit in enumerate(hits):
+            hit_id = str(hit.get("hit_id") or "")
+            status = (
+                "ready"
+                if hit.get("has_structure") and hit.get("has_score_data")
+                else "missing JSON/PDB"
+            )
+            values = [
+                hit_id,
+                _format_picker_float(hit.get("iptmavg")),
+                _format_picker_float(hit.get("scaled_peakavg")),
+                status,
+                "yes" if hit_id in self._opened_hit_ids else "",
+                str(hit.get("name") or ""),
+            ]
+            for column, value in enumerate(values):
+                item = self._table_item_class(value)
+                item.setData(self._qt.UserRole, hit_id)
+                if hit_id in self._opened_hit_ids:
+                    item.setBackground(self._opened_background)
+                self._hit_table.setItem(row, column, item)
+        self._hit_table.resizeColumnsToContents()
+
+    def _set_plot_html(self):
+        if not self._plot_html:
+            return
+        if self._web_engine_available:
+            base_url = self._qurl_class.fromLocalFile(str(self._plot_path))
+            self._plot_widget.setHtml(self._plot_html, base_url)
+        else:
+            self._plot_widget.setHtml(self._plot_html)
+
+    def _handle_url(self, url):
+        url_text = url.toString() if hasattr(url, "toString") else str(url)
+        hit_id = self._hit_id_from_url(url_text)
+        if not hit_id:
+            return
+        self._open_hit(hit_id)
+
+    def _hit_id_from_url(self, url_text):
+        from urllib.parse import parse_qs, urlparse
+
+        parsed = urlparse(url_text)
+        if parsed.scheme == "chimerax-htcf":
+            return (parse_qs(parsed.query).get("hit") or [""])[0]
+        fragment = parsed.fragment or ""
+        if fragment.startswith("hit-"):
+            return fragment[4:]
+        return ""
+
+    def _open_selected_hit(self):
+        row = self._hit_table.currentRow()
+        if row < 0:
+            self._status_label.setText("Select a hit row first.")
+            return
+        self._open_hit_from_row(row)
+
+    def _open_hit_from_row(self, row):
+        item = self._hit_table.item(row, 0)
+        if item is None:
+            return
+        hit_id = item.data(self._qt.UserRole) or item.text()
+        if hit_id:
+            self._open_hit(str(hit_id))
+
+    def _open_hit(self, hit_id):
+        from .workflow import describe_prediction_folder, run_af_prediction_analysis
+
+        directory = Path(self._directory_entry.text().strip()).expanduser()
+        mode = self._mode_combo.currentData()
+        try:
+            describe_prediction_folder(directory, mode, hit_id)
+            result = run_af_prediction_analysis(
+                self.session,
+                mode=mode,
+                directory=directory,
+                prediction_filter=hit_id,
+                requested_chain=None,
+            )
+        except Exception as err:
+            self._status_label.setText(f"Could not open hit {hit_id}: {err}")
+            self.session.logger.error(str(err))
+            return
+
+        launcher = AFPredictionLauncher.get_singleton(
+            self.session, create=True, display=False
+        )
+        launcher.set_mode(mode, prompt_for_directory=False)
+        launcher._directory_entry.setText(str(directory))
+        launcher._prediction_filter_entry.setText(hit_id)
+        launcher._refresh_preview()
+        launcher._display_controller().add_run(result)
+        self._opened_hit_ids.add(str(hit_id))
+        self._refresh_loaded_state()
+        self._status_label.setText(result.summary)
+        self.session.logger.info(result.summary)
+
+    def _refresh_loaded_state(self):
+        if self._plot_path is None:
+            return
+        from .workflow import write_ht_colabfold_peak_iptm_plot
+
+        try:
+            plot_path, hits = write_ht_colabfold_peak_iptm_plot(
+                Path(self._directory_entry.text().strip()).expanduser(),
+                output_path=self._plot_path,
+                opened_hit_ids=self._opened_hit_ids,
+            )
+        except Exception as err:
+            self._status_label.setText(str(err))
+            return
+        self._plot_path = plot_path
+        self._hits = hits
+        self._plot_html = plot_path.read_text(encoding="utf-8")
+        self._populate_hit_table()
+        self._set_plot_html()
+
+    def _open_html_in_browser(self):
+        if self._plot_path is None:
+            self._load_plot()
+        if self._plot_path is None:
+            return
+        try:
+            from Qt.QtCore import QUrl
+            from Qt.QtGui import QDesktopServices
+
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._plot_path)))
+        except Exception as err:
+            self._status_label.setText(f"Could not open HTML file: {err}")
+
+
+def _natural_hit_id(hit):
+    try:
+        return int(hit.get("hit_id") or 0)
+    except (TypeError, ValueError):
+        return str(hit.get("hit_id") or "")
+
+
+def _format_picker_float(value):
+    if value is None:
+        return ""
+    return f"{float(value):.4g}"
 
 
 class AFDisplayController(ToolInstance):
@@ -1654,8 +2021,9 @@ class AFMissenseTool(ToolInstance):
         layout.addWidget(title)
 
         note = QLabel(
-            "Apply AlphaMissense scores to exactly one selected chain. "
-            "AlphaMissense data is only available for human proteins.",
+            "Apply AlphaMissense scores to one selected chain, or to all "
+            "protein chains in one structure. AlphaMissense data is only "
+            "available for human proteins.",
             parent,
         )
         note.setWordWrap(True)
@@ -1685,12 +2053,20 @@ class AFMissenseTool(ToolInstance):
 
         self._uniprot_entry = QLineEdit(parent)
         self._uniprot_entry.setPlaceholderText(
-            "Human UniProt accession or entry name, e.g. Q9Y5S1 or TP53_HUMAN"
+            "Optional override: human UniProt accession or entry name"
         )
         layout.addWidget(self._uniprot_entry)
 
         self._label_checkbox = QCheckBox("Add residue labels", parent)
         layout.addWidget(self._label_checkbox)
+
+        self._color_key_checkbox = QCheckBox("Show AlphaMissense color key", parent)
+        self._color_key_checkbox.setChecked(True)
+        self._color_key_checkbox.setToolTip(
+            "Show a ChimeraX color key for the blue-red AlphaMissense score "
+            "scale, where 0 is blue and 1 is red."
+        )
+        layout.addWidget(self._color_key_checkbox)
 
         button_row = QHBoxLayout()
         layout.addLayout(button_row)
@@ -1706,6 +2082,14 @@ class AFMissenseTool(ToolInstance):
         apply_button = QPushButton("Apply to Selected Chain", parent)
         apply_button.clicked.connect(self._apply_mapping)
         button_row.addWidget(apply_button)
+
+        apply_all_button = QPushButton("Apply to All Chains in Model", parent)
+        apply_all_button.setToolTip(
+            "Uses the model id field, or the selected structure if model id is blank. "
+            "The chain id field is ignored."
+        )
+        apply_all_button.clicked.connect(self._apply_mapping_to_all_chains)
+        button_row.addWidget(apply_all_button)
 
         self._result_label = QLabel(parent)
         self._result_label.setWordWrap(True)
@@ -1741,11 +2125,55 @@ class AFMissenseTool(ToolInstance):
             model_id=self._model_id_entry.text().strip(),
             chain_id=self._chain_id_entry.text().strip(),
             label_residues=self._label_checkbox.isChecked(),
+            show_color_key=self._color_key_checkbox.isChecked(),
         )
         self._refresh_selection()
         labels_text = "yes" if result["labels_added"] else "no"
+        key_text = "yes" if result.get("color_key_shown") else "no"
         self._result_label.setText(
             f"Mapped {result['uniprot_id']} onto {result['chain_label']}.\n"
             f"Residue labels: {labels_text}\n"
+            f"Color key: {key_text}\n"
             "The temporary AlphaMissense data set was closed after mapping."
         )
+
+    def _apply_mapping_to_all_chains(self):
+        result = apply_missense_scores_to_structure(
+            self.session,
+            self._uniprot_entry.text().strip(),
+            model_id=self._model_id_entry.text().strip(),
+            label_residues=self._label_checkbox.isChecked(),
+            show_color_key=self._color_key_checkbox.isChecked(),
+        )
+        self._refresh_selection()
+        labels_text = "yes" if result["labels_added"] else "no"
+        key_text = "yes" if result.get("color_key_shown") else "no"
+        mapped = result["mapped_chain_labels"]
+        failed = result["failed_chains"]
+        if result.get("used_uniprot_override"):
+            source = result.get("uniprot_id") or "manual UniProt override"
+        else:
+            source = "chain UniProt IDs from mmCIF metadata"
+        chain_sources = result.get("chain_uniprot_ids") or {}
+        summary = (
+            f"Mapped {source} onto {len(mapped)} chain(s) in "
+            f"{result['structure_label']}.\n"
+            f"Residue labels: {labels_text}\n"
+            f"Color key: {key_text}\n"
+            f"Mapped chains: {', '.join(mapped)}\n"
+            "The temporary AlphaMissense data set was closed after mapping."
+        )
+        if chain_sources and not result.get("used_uniprot_override"):
+            source_text = "; ".join(
+                f"{label}: {uniprot_id}"
+                for label, uniprot_id in list(chain_sources.items())[:8]
+            )
+            if len(chain_sources) > 8:
+                source_text += f"; ... {len(chain_sources) - 8} more"
+            summary += f"\nUniProt sources: {source_text}"
+        if failed:
+            skipped = "; ".join(f"{label}: {error}" for label, error in failed[:4])
+            if len(failed) > 4:
+                skipped += f"; ... {len(failed) - 4} more"
+            summary += f"\nSkipped chains: {skipped}"
+        self._result_label.setText(summary)

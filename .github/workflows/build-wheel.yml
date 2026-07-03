@@ -1,0 +1,44 @@
+name: Build ChimeraX bundle wheel
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build wheel
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Run smoke tests
+        run: |
+          python -m compileall src tests
+          python tests/smoke_test_discovery.py
+          python tests/smoke_test_missense.py
+
+      - name: Build wheel
+        run: |
+          python tools/build_bundle_wheel.py
+          ls -lh dist/*.whl
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chimerax-afprediction-toolbars-wheel
+          path: dist/*.whl
+          if-no-files-found: error
