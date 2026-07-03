@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.30
+
+- Fixed AlphaMissense mapping on ChimeraX versions whose
+  `mutation_scores_structure()` API does not accept
+  `minimum_percent_identity`.
+- The bundle now adapts to the installed ChimeraX mutation-score API signature
+  instead of assuming one keyword set.
+- Renamed the advanced all-chain action to `Map missense to all chains` and
+  moved it to the first position in the advanced button row.
+
 ## 1.3.28
 
 - Added a `Show AlphaMissense color key` option to the Missense panel.
@@ -23,7 +33,7 @@
 
 ## 1.3.25
 
-- Added `Apply to All Chains in Model` to the AlphaMissense mapping panel.
+- Added `Map missense to all chains` to the AlphaMissense mapping panel.
 - The selected-chain path remains strict, while the all-chain path maps every
   protein chain in one structure.
 - All-chain mapping uses the `Model id` field, or the selected/only open

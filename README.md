@@ -23,7 +23,7 @@ Use one install method only.
    wheel:
 
 ```text
-toolshed install /path/to/chimerax_afpredictiontoolbars-1.3.29-py3-none-any.whl
+toolshed install /path/to/chimerax_afpredictiontoolbars-1.3.30-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -261,7 +261,7 @@ Open `Advanced custom chain mapping` only when you need to target one chain,
 choose a specific model id, or override missing CIF UniProt metadata manually.
 Use `Apply to Selected Chain` for strict one-chain mapping. For manual chain
 mapping, set both `Model id` and `Chain id`, or leave both blank and select
-exactly one chain in ChimeraX. `Map all chains with override/settings` can use a
+exactly one chain in ChimeraX. `Map missense to all chains` can use a
 manual human UniProt accession or entry name as an override for all protein
 chains in the target model.
 

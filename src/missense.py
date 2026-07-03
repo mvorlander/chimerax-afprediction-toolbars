@@ -1,4 +1,5 @@
 from datetime import datetime
+import inspect
 from pathlib import Path
 import shlex
 
@@ -216,13 +217,11 @@ def _map_chain_with_mutation_set(
     from chimerax.mutation_scores.ms_data import mutation_scores_structure
     from chimerax.mutation_scores.ms_define import mutation_scores_define
 
-    mutation_scores_structure(
+    _call_mutation_scores_structure(
+        mutation_scores_structure,
         session,
         [chain],
-        allow_mismatches=True,
-        minimum_percent_identity=20,
-        align_sequences=True,
-        mutation_set=mutation_set_name,
+        mutation_set_name,
     )
     mutation_scores_define(
         session,
@@ -248,6 +247,66 @@ def _map_chain_with_mutation_set(
             f"{chain.atomspec} amiss mutationSet {quote_if_necessary(mutation_set_name)} "
             "height 1.5 palette bluered",
         )
+
+
+def _call_mutation_scores_structure(
+    mutation_scores_structure,
+    session,
+    chains,
+    mutation_set_name,
+):
+    kwargs = {
+        "allow_mismatches": True,
+        "minimum_percent_identity": 20,
+        "align_sequences": True,
+        "mutation_set": mutation_set_name,
+    }
+
+    try:
+        signature = inspect.signature(mutation_scores_structure)
+    except (TypeError, ValueError):
+        return _call_with_keyword_fallback(
+            mutation_scores_structure, session, chains, kwargs
+        )
+
+    parameters = signature.parameters
+    if any(param.kind == param.VAR_KEYWORD for param in parameters.values()):
+        supported_kwargs = kwargs
+    else:
+        supported_kwargs = {
+            name: value for name, value in kwargs.items() if name in parameters
+        }
+        if (
+            "minimum_percent_identity" not in supported_kwargs
+            and "minimum_identity" in parameters
+        ):
+            supported_kwargs["minimum_identity"] = 0.2
+
+    return mutation_scores_structure(session, chains, **supported_kwargs)
+
+
+def _call_with_keyword_fallback(function, session, chains, kwargs):
+    remaining = dict(kwargs)
+    while True:
+        try:
+            return function(session, chains, **remaining)
+        except TypeError as err:
+            bad_keyword = _unexpected_keyword_from_type_error(err)
+            if not bad_keyword or bad_keyword not in remaining:
+                raise
+            remaining.pop(bad_keyword)
+
+
+def _unexpected_keyword_from_type_error(error):
+    message = str(error)
+    marker = "unexpected keyword argument "
+    if marker not in message:
+        return ""
+    keyword = message.split(marker, 1)[1].strip()
+    if keyword[:1] in {"'", '"'}:
+        quote = keyword[0]
+        return keyword[1:].split(quote, 1)[0]
+    return keyword.split(None, 1)[0]
 
 
 def apply_missense_coloring(

@@ -197,6 +197,60 @@ _entity_poly.pdbx_strand_id
     if any("mutation" in command.lower() for command in commands_run):
         raise AssertionError(f"recolor should not touch mutation-score data: {commands_run!r}")
 
+    compatibility_calls = []
+
+    def old_mutation_scores_structure(_session, _chains, allow_mismatches=None, mutation_set=None):
+        compatibility_calls.append(
+            {
+                "allow_mismatches": allow_mismatches,
+                "mutation_set": mutation_set,
+            }
+        )
+
+    missense._call_mutation_scores_structure(
+        old_mutation_scores_structure, session, [protein_a], "amiss_old"
+    )
+    if compatibility_calls != [
+        {"allow_mismatches": True, "mutation_set": "amiss_old"}
+    ]:
+        raise AssertionError(
+            f"old mutation_scores_structure compatibility failed: {compatibility_calls!r}"
+        )
+
+    compatibility_calls.clear()
+
+    def new_mutation_scores_structure(
+        _session,
+        _chains,
+        allow_mismatches=None,
+        minimum_percent_identity=50,
+        align_sequences=None,
+        mutation_set=None,
+    ):
+        compatibility_calls.append(
+            {
+                "allow_mismatches": allow_mismatches,
+                "minimum_percent_identity": minimum_percent_identity,
+                "align_sequences": align_sequences,
+                "mutation_set": mutation_set,
+            }
+        )
+
+    missense._call_mutation_scores_structure(
+        new_mutation_scores_structure, session, [protein_a], "amiss_new"
+    )
+    if compatibility_calls != [
+        {
+            "allow_mismatches": True,
+            "minimum_percent_identity": 20,
+            "align_sequences": True,
+            "mutation_set": "amiss_new",
+        }
+    ]:
+        raise AssertionError(
+            f"new mutation_scores_structure compatibility failed: {compatibility_calls!r}"
+        )
+
     print("AlphaMissense target smoke test passed.")
     return 0
 

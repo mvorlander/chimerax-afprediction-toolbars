@@ -2168,6 +2168,16 @@ class AFMissenseTool(ToolInstance):
         button_row = QHBoxLayout()
         advanced_layout.addLayout(button_row)
 
+        apply_all_button = QPushButton(
+            "Map missense to all chains", self._advanced_widget
+        )
+        apply_all_button.setToolTip(
+            "Uses the model id and optional UniProt override fields. The chain id "
+            "field is ignored."
+        )
+        apply_all_button.clicked.connect(self._apply_mapping_to_all_chains)
+        button_row.addWidget(apply_all_button)
+
         refresh_button = QPushButton("Refresh Selection", self._advanced_widget)
         refresh_button.clicked.connect(self._refresh_selection)
         button_row.addWidget(refresh_button)
@@ -2179,16 +2189,6 @@ class AFMissenseTool(ToolInstance):
         apply_button = QPushButton("Apply to Selected Chain", self._advanced_widget)
         apply_button.clicked.connect(self._apply_mapping)
         button_row.addWidget(apply_button)
-
-        apply_all_button = QPushButton(
-            "Map all chains with override/settings", self._advanced_widget
-        )
-        apply_all_button.setToolTip(
-            "Uses the model id and optional UniProt override fields. The chain id "
-            "field is ignored."
-        )
-        apply_all_button.clicked.connect(self._apply_mapping_to_all_chains)
-        button_row.addWidget(apply_all_button)
 
         self._result_label = QLabel(parent)
         self._result_label.setWordWrap(True)
