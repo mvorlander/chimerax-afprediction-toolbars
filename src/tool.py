@@ -4,6 +4,7 @@ from chimerax.core.errors import UserError
 from chimerax.core.tools import ToolInstance
 
 from .missense import (
+    apply_missense_coloring,
     apply_missense_scores,
     apply_missense_scores_to_structure,
     selected_chain_summary,
@@ -2001,17 +2002,21 @@ class AFMissenseTool(ToolInstance):
         from Qt.QtCore import Qt
         from Qt.QtWidgets import (
             QCheckBox,
+            QDoubleSpinBox,
             QGridLayout,
             QHBoxLayout,
             QLabel,
             QLineEdit,
             QPushButton,
+            QToolButton,
             QVBoxLayout,
             QWidget,
         )
 
         self.tool_window = tw = MainToolWindow(self, close_destroys=False)
         parent = tw.ui_area
+        self._last_missense_targets = []
+        self._last_missense_attr = "amiss_avg"
 
         layout = QVBoxLayout(parent)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -2034,28 +2039,29 @@ class AFMissenseTool(ToolInstance):
         self._selection_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         layout.addWidget(self._selection_label)
 
-        target_form = QWidget(parent)
-        target_layout = QGridLayout(target_form)
-        target_layout.setContentsMargins(0, 0, 0, 0)
-        target_layout.setHorizontalSpacing(8)
-        target_layout.setVerticalSpacing(8)
-        layout.addWidget(target_form)
+        auto_title = QLabel("<b>Automatic mapping</b>", parent)
+        layout.addWidget(auto_title)
 
-        target_layout.addWidget(QLabel("Model id", target_form), 0, 0)
-        self._model_id_entry = QLineEdit(target_form)
-        self._model_id_entry.setPlaceholderText("Example: 1")
-        target_layout.addWidget(self._model_id_entry, 0, 1)
-
-        target_layout.addWidget(QLabel("Chain id", target_form), 1, 0)
-        self._chain_id_entry = QLineEdit(target_form)
-        self._chain_id_entry.setPlaceholderText("Example: A")
-        target_layout.addWidget(self._chain_id_entry, 1, 1)
-
-        self._uniprot_entry = QLineEdit(parent)
-        self._uniprot_entry.setPlaceholderText(
-            "Optional override: human UniProt accession or entry name"
+        auto_help = QLabel(
+            "Auto-map missense to every protein chain in the selected or only "
+            "open structure. This only works for human structures when the CIF "
+            "file contains UniProt IDs for the chains. If several structures are "
+            "open, select the target structure or set a model id under Advanced.",
+            parent,
         )
-        layout.addWidget(self._uniprot_entry)
+        auto_help.setWordWrap(True)
+        layout.addWidget(auto_help)
+
+        auto_button = QPushButton("Auto-map missense to all chains", parent)
+        auto_button.setToolTip(
+            "Read chain UniProt IDs from CIF metadata and map AlphaMissense to "
+            "all protein chains. The manual UniProt override is ignored."
+        )
+        auto_button.clicked.connect(self._auto_map_missense_to_all_chains)
+        layout.addWidget(auto_button)
+
+        display_title = QLabel("<b>Display options</b>", parent)
+        layout.addWidget(display_title)
 
         self._label_checkbox = QCheckBox("Add residue labels", parent)
         layout.addWidget(self._label_checkbox)
@@ -2068,25 +2074,118 @@ class AFMissenseTool(ToolInstance):
         )
         layout.addWidget(self._color_key_checkbox)
 
-        button_row = QHBoxLayout()
-        layout.addLayout(button_row)
+        color_form = QWidget(parent)
+        color_layout = QGridLayout(color_form)
+        color_layout.setContentsMargins(0, 0, 0, 0)
+        color_layout.setHorizontalSpacing(8)
+        color_layout.setVerticalSpacing(6)
+        layout.addWidget(color_form)
 
-        refresh_button = QPushButton("Refresh Selection", parent)
+        color_layout.addWidget(QLabel("<b>Color range</b>", color_form), 0, 0, 1, 2)
+        range_note = QLabel(
+            "Adjusts the blue-red score range. Updating recolors mapped residues "
+            "without fetching AlphaMissense scores again.",
+            color_form,
+        )
+        range_note.setWordWrap(True)
+        color_layout.addWidget(range_note, 1, 0, 1, 3)
+
+        color_layout.addWidget(QLabel("Blue at", color_form), 2, 0)
+        self._range_min_spin = QDoubleSpinBox(color_form)
+        self._range_min_spin.setRange(0.0, 1.0)
+        self._range_min_spin.setSingleStep(0.05)
+        self._range_min_spin.setDecimals(2)
+        self._range_min_spin.setValue(0.0)
+        self._range_min_spin.setToolTip("AlphaMissense score mapped to blue.")
+        color_layout.addWidget(self._range_min_spin, 2, 1)
+
+        color_layout.addWidget(QLabel("Red at", color_form), 3, 0)
+        self._range_max_spin = QDoubleSpinBox(color_form)
+        self._range_max_spin.setRange(0.0, 1.0)
+        self._range_max_spin.setSingleStep(0.05)
+        self._range_max_spin.setDecimals(2)
+        self._range_max_spin.setValue(1.0)
+        self._range_max_spin.setToolTip("AlphaMissense score mapped to red.")
+        color_layout.addWidget(self._range_max_spin, 3, 1)
+
+        recolor_button = QPushButton("Update Color Range", color_form)
+        recolor_button.setToolTip(
+            "Recolor the last mapped AlphaMissense chains using the current range."
+        )
+        recolor_button.clicked.connect(self._update_color_range)
+        color_layout.addWidget(recolor_button, 2, 2, 2, 1)
+
+        self._advanced_toggle = QToolButton(parent)
+        self._advanced_toggle.setText("Advanced custom chain mapping")
+        self._advanced_toggle.setCheckable(True)
+        self._advanced_toggle.setChecked(False)
+        self._advanced_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self._advanced_toggle.setArrowType(Qt.RightArrow)
+        self._advanced_toggle.toggled.connect(self._set_advanced_visible)
+        layout.addWidget(self._advanced_toggle)
+
+        self._advanced_widget = QWidget(parent)
+        advanced_layout = QVBoxLayout(self._advanced_widget)
+        advanced_layout.setContentsMargins(12, 0, 0, 0)
+        advanced_layout.setSpacing(8)
+        self._advanced_widget.setVisible(False)
+        layout.addWidget(self._advanced_widget)
+
+        advanced_help = QLabel(
+            "Use these controls when you need to target one chain, choose a "
+            "specific model id, or override missing CIF UniProt metadata. For "
+            "manual chain mapping, model id and chain id must both be set, or "
+            "both left blank to use exactly one selected chain. The UniProt "
+            "override must be a human UniProt accession or entry name.",
+            self._advanced_widget,
+        )
+        advanced_help.setWordWrap(True)
+        advanced_layout.addWidget(advanced_help)
+
+        target_form = QWidget(self._advanced_widget)
+        target_layout = QGridLayout(target_form)
+        target_layout.setContentsMargins(0, 0, 0, 0)
+        target_layout.setHorizontalSpacing(8)
+        target_layout.setVerticalSpacing(8)
+        advanced_layout.addWidget(target_form)
+
+        target_layout.addWidget(QLabel("Model id", target_form), 0, 0)
+        self._model_id_entry = QLineEdit(target_form)
+        self._model_id_entry.setPlaceholderText("Example: 1")
+        target_layout.addWidget(self._model_id_entry, 0, 1)
+
+        target_layout.addWidget(QLabel("Chain id", target_form), 1, 0)
+        self._chain_id_entry = QLineEdit(target_form)
+        self._chain_id_entry.setPlaceholderText("Example: A")
+        target_layout.addWidget(self._chain_id_entry, 1, 1)
+
+        self._uniprot_entry = QLineEdit(self._advanced_widget)
+        self._uniprot_entry.setPlaceholderText(
+            "Optional override: human UniProt accession or entry name"
+        )
+        advanced_layout.addWidget(self._uniprot_entry)
+
+        button_row = QHBoxLayout()
+        advanced_layout.addLayout(button_row)
+
+        refresh_button = QPushButton("Refresh Selection", self._advanced_widget)
         refresh_button.clicked.connect(self._refresh_selection)
         button_row.addWidget(refresh_button)
 
-        fill_button = QPushButton("Use Selected Chain", parent)
+        fill_button = QPushButton("Use Selected Chain", self._advanced_widget)
         fill_button.clicked.connect(self._fill_from_selection)
         button_row.addWidget(fill_button)
 
-        apply_button = QPushButton("Apply to Selected Chain", parent)
+        apply_button = QPushButton("Apply to Selected Chain", self._advanced_widget)
         apply_button.clicked.connect(self._apply_mapping)
         button_row.addWidget(apply_button)
 
-        apply_all_button = QPushButton("Apply to All Chains in Model", parent)
+        apply_all_button = QPushButton(
+            "Map all chains with override/settings", self._advanced_widget
+        )
         apply_all_button.setToolTip(
-            "Uses the model id field, or the selected structure if model id is blank. "
-            "The chain id field is ignored."
+            "Uses the model id and optional UniProt override fields. The chain id "
+            "field is ignored."
         )
         apply_all_button.clicked.connect(self._apply_mapping_to_all_chains)
         button_row.addWidget(apply_all_button)
@@ -2118,6 +2217,22 @@ class AFMissenseTool(ToolInstance):
         self._chain_id_entry.setText(target["chain_id"])
         self._refresh_selection()
 
+    def _set_advanced_visible(self, visible):
+        self._advanced_widget.setVisible(visible)
+        self._advanced_toggle.setArrowType(
+            self._qt_down_arrow() if visible else self._qt_right_arrow()
+        )
+
+    def _qt_down_arrow(self):
+        from Qt.QtCore import Qt
+
+        return Qt.DownArrow
+
+    def _qt_right_arrow(self):
+        from Qt.QtCore import Qt
+
+        return Qt.RightArrow
+
     def _apply_mapping(self):
         result = apply_missense_scores(
             self.session,
@@ -2126,16 +2241,31 @@ class AFMissenseTool(ToolInstance):
             chain_id=self._chain_id_entry.text().strip(),
             label_residues=self._label_checkbox.isChecked(),
             show_color_key=self._color_key_checkbox.isChecked(),
+            color_range=self._color_range(),
         )
+        self._store_missense_targets(result)
         self._refresh_selection()
         labels_text = "yes" if result["labels_added"] else "no"
         key_text = "yes" if result.get("color_key_shown") else "no"
+        range_min, range_max = result["color_range"]
         self._result_label.setText(
             f"Mapped {result['uniprot_id']} onto {result['chain_label']}.\n"
             f"Residue labels: {labels_text}\n"
             f"Color key: {key_text}\n"
+            f"Color range: {range_min:g} to {range_max:g}\n"
             "The temporary AlphaMissense data set was closed after mapping."
         )
+
+    def _auto_map_missense_to_all_chains(self):
+        result = apply_missense_scores_to_structure(
+            self.session,
+            "",
+            model_id=self._model_id_entry.text().strip(),
+            label_residues=self._label_checkbox.isChecked(),
+            show_color_key=self._color_key_checkbox.isChecked(),
+            color_range=self._color_range(),
+        )
+        self._show_all_chain_mapping_result(result)
 
     def _apply_mapping_to_all_chains(self):
         result = apply_missense_scores_to_structure(
@@ -2144,10 +2274,16 @@ class AFMissenseTool(ToolInstance):
             model_id=self._model_id_entry.text().strip(),
             label_residues=self._label_checkbox.isChecked(),
             show_color_key=self._color_key_checkbox.isChecked(),
+            color_range=self._color_range(),
         )
+        self._show_all_chain_mapping_result(result)
+
+    def _show_all_chain_mapping_result(self, result):
+        self._store_missense_targets(result)
         self._refresh_selection()
         labels_text = "yes" if result["labels_added"] else "no"
         key_text = "yes" if result.get("color_key_shown") else "no"
+        range_min, range_max = result["color_range"]
         mapped = result["mapped_chain_labels"]
         failed = result["failed_chains"]
         if result.get("used_uniprot_override"):
@@ -2160,6 +2296,7 @@ class AFMissenseTool(ToolInstance):
             f"{result['structure_label']}.\n"
             f"Residue labels: {labels_text}\n"
             f"Color key: {key_text}\n"
+            f"Color range: {range_min:g} to {range_max:g}\n"
             f"Mapped chains: {', '.join(mapped)}\n"
             "The temporary AlphaMissense data set was closed after mapping."
         )
@@ -2177,3 +2314,25 @@ class AFMissenseTool(ToolInstance):
                 skipped += f"; ... {len(failed) - 4} more"
             summary += f"\nSkipped chains: {skipped}"
         self._result_label.setText(summary)
+
+    def _color_range(self):
+        return (self._range_min_spin.value(), self._range_max_spin.value())
+
+    def _store_missense_targets(self, result):
+        self._last_missense_targets = list(result.get("target_specs") or [])
+        self._last_missense_attr = result.get("attribute_name") or "amiss_avg"
+
+    def _update_color_range(self):
+        apply_missense_coloring(
+            self.session,
+            self._last_missense_targets,
+            attr_name=self._last_missense_attr,
+            color_range=self._color_range(),
+            show_color_key=self._color_key_checkbox.isChecked(),
+        )
+        range_min, range_max = self._color_range()
+        self._result_label.setText(
+            "Updated AlphaMissense coloring for the last mapped chain(s).\n"
+            f"Color range: {range_min:g} to {range_max:g}\n"
+            "No AlphaMissense scores were fetched again."
+        )

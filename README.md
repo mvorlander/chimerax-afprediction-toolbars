@@ -23,7 +23,7 @@ Use one install method only.
    wheel:
 
 ```text
-toolshed install /path/to/chimerax_afpredictiontoolbars-1.3.28-py3-none-any.whl
+toolshed install /path/to/chimerax_afpredictiontoolbars-1.3.29-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -249,21 +249,28 @@ analysis.
 ## AlphaMissense Mapping
 
 The missense panel fetches AlphaMissense scores directly for a human UniProt
-accession or entry name, associates them with the selected target chain, colors
-the chain by the average AlphaMissense score, and closes the temporary score set.
-Use `Apply to Selected Chain` for strict one-chain mapping. If the UniProt field
-is blank, the tool reads the chain's UniProt accession from mmCIF metadata; the
-field is only an override. Use `Apply to All Chains in Model` to map every
-protein chain in one structure. In all-chain mode, a blank UniProt field means
-each chain uses its own UniProt accession from the mmCIF file. Entering a UniProt
-entry manually overrides the mmCIF metadata and applies that same entry to every
-protein chain. The all-chain mode uses the `Model id` field, or the
-selected/only open structure when the model id is blank, skips chains that cannot
-be mapped, and reports which chains were mapped or skipped.
+accession or entry name, associates them with target chains, colors each chain
+by the average AlphaMissense score, and closes the temporary score set. The
+primary action is `Auto-map missense to all chains`. It reads chain UniProt IDs
+from the CIF/mmCIF metadata, maps every protein chain in the selected or only
+open structure, skips chains that cannot be mapped, and reports which chains
+were mapped or skipped. This automatic mode only works for human structures when
+the CIF file contains UniProt IDs for the chains.
+
+Open `Advanced custom chain mapping` only when you need to target one chain,
+choose a specific model id, or override missing CIF UniProt metadata manually.
+Use `Apply to Selected Chain` for strict one-chain mapping. For manual chain
+mapping, set both `Model id` and `Chain id`, or leave both blank and select
+exactly one chain in ChimeraX. `Map all chains with override/settings` can use a
+manual human UniProt accession or entry name as an override for all protein
+chains in the target model.
 
 Enable `Show AlphaMissense color key` to add a ChimeraX color key for the
-blue-red AlphaMissense score scale. The key uses the same 0 to 1 range as the
-structure coloring.
+blue-red AlphaMissense score scale. Use the `Blue at` and `Red at` color range
+controls to adjust which score values define the ends of the scale. After a
+mapping has been applied, `Update Color Range` recolors the last mapped chain(s)
+from the stored residue attribute without fetching or recomputing AlphaMissense
+scores again.
 
 ![AlphaMissense mapping panel](screenshots/Missense_GUI.png)
 

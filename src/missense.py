@@ -34,6 +34,7 @@ def apply_missense_scores(
     chain_id=None,
     label_residues=False,
     show_color_key=True,
+    color_range=(0.0, 1.0),
 ):
     chain = _resolve_chain(session, model_id=model_id, chain_id=chain_id)
     uniprot_id = (uniprot_id or "").strip() or _uniprot_id_for_chain(chain)
@@ -61,15 +62,18 @@ def apply_missense_scores(
             avg_attr_name,
             label_residues=label_residues,
             show_color_key=show_color_key,
+            color_range=color_range,
         )
 
         result = {
             "uniprot_id": uniprot_id,
             "chain_label": _chain_label(chain),
+            "target_specs": [chain.atomspec],
             "mutation_set_name": mutation_set_name,
             "attribute_name": avg_attr_name,
             "labels_added": label_residues,
             "color_key_shown": show_color_key,
+            "color_range": _normalized_score_range(color_range),
         }
         session.logger.status(
             f"Applied AlphaMissense mapping from {uniprot_id} to {_chain_label(chain)}.",
@@ -92,6 +96,7 @@ def apply_missense_scores_to_structure(
     model_id=None,
     label_residues=False,
     show_color_key=True,
+    color_range=(0.0, 1.0),
 ):
     structure = _resolve_structure(session, model_id=model_id)
     chains = _protein_chains(structure)
@@ -144,6 +149,7 @@ def apply_missense_scores_to_structure(
                         avg_attr_name,
                         label_residues=label_residues,
                         show_color_key=show_color_key,
+                        color_range=color_range,
                     )
                 except Exception as err:
                     failed.append((_chain_label(chain), str(err)))
@@ -176,7 +182,14 @@ def apply_missense_scores_to_structure(
         "attribute_name": avg_attr_name,
         "labels_added": label_residues,
         "color_key_shown": show_color_key,
+        "color_range": _normalized_score_range(color_range),
         "mapped_chain_labels": mapped,
+        "target_specs": [
+            chain.atomspec
+            for target_chains in targets_by_uniprot.values()
+            for chain in target_chains
+            if _chain_label(chain) in mapped
+        ],
         "failed_chains": failed,
         "chain_uniprot_ids": chain_uniprot_ids,
         "used_uniprot_override": bool(uniprot_override),
@@ -198,6 +211,7 @@ def _map_chain_with_mutation_set(
     *,
     label_residues=False,
     show_color_key=True,
+    color_range=(0.0, 1.0),
 ):
     from chimerax.mutation_scores.ms_data import mutation_scores_structure
     from chimerax.mutation_scores.ms_define import mutation_scores_define
@@ -219,22 +233,57 @@ def _map_chain_with_mutation_set(
         set_attribute=True,
     )
 
-    chain_spec = chain.atomspec
-    run(
+    apply_missense_coloring(
         session,
-        f"color byattribute r:{avg_attr_name} {chain_spec} "
-        "target csab palette bluered range 0,1"
-        + (" key true" if show_color_key else ""),
+        [chain.atomspec],
+        attr_name=avg_attr_name,
+        color_range=color_range,
+        show_color_key=show_color_key,
     )
-    run(session, f"cartoon byattribute r:{avg_attr_name} {chain_spec}")
 
     if label_residues:
         run(
             session,
             "mutationscores label "
-            f"{chain_spec} amiss mutationSet {quote_if_necessary(mutation_set_name)} "
+            f"{chain.atomspec} amiss mutationSet {quote_if_necessary(mutation_set_name)} "
             "height 1.5 palette bluered",
         )
+
+
+def apply_missense_coloring(
+    session,
+    target_specs,
+    *,
+    attr_name="amiss_avg",
+    color_range=(0.0, 1.0),
+    show_color_key=True,
+):
+    score_min, score_max = _normalized_score_range(color_range)
+    specs = [str(spec).strip() for spec in target_specs if str(spec).strip()]
+    if not specs:
+        raise UserError("No mapped AlphaMissense chains are available to recolor.")
+
+    range_text = f"{score_min:g},{score_max:g}"
+    for index, target_spec in enumerate(specs):
+        run(
+            session,
+            f"color byattribute r:{attr_name} {target_spec} "
+            f"target csab palette bluered range {range_text}"
+            + (" key true" if show_color_key and index == 0 else ""),
+        )
+        run(session, f"cartoon byattribute r:{attr_name} {target_spec}")
+
+
+def _normalized_score_range(color_range):
+    try:
+        score_min, score_max = color_range
+        score_min = float(score_min)
+        score_max = float(score_max)
+    except Exception:
+        raise UserError("AlphaMissense color range must contain two numeric values.")
+    if score_min >= score_max:
+        raise UserError("AlphaMissense color range minimum must be below maximum.")
+    return score_min, score_max
 
 
 def _resolve_chain(session, *, model_id=None, chain_id=None):

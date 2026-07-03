@@ -162,9 +162,12 @@ _entity_poly.pdbx_strand_id
         "amiss_test",
         "amiss_avg",
         show_color_key=True,
+        color_range=(0.2, 0.8),
     )
     if not any("key true" in command for command in commands_run):
         raise AssertionError(f"missing color-key option in commands: {commands_run!r}")
+    if not any("range 0.2,0.8" in command for command in commands_run):
+        raise AssertionError(f"missing custom color range in commands: {commands_run!r}")
 
     commands_run.clear()
     missense._map_chain_with_mutation_set(
@@ -176,6 +179,23 @@ _entity_poly.pdbx_strand_id
     )
     if any("key true" in command for command in commands_run):
         raise AssertionError(f"color-key option should be omitted: {commands_run!r}")
+
+    commands_run.clear()
+    missense.apply_missense_coloring(
+        session,
+        [protein_a.atomspec, protein_b.atomspec, "/DX", "/L1"],
+        color_range=(0.1, 0.7),
+        show_color_key=False,
+    )
+    if not any("range 0.1,0.7" in command for command in commands_run):
+        raise AssertionError(f"standalone recolor did not use range: {commands_run!r}")
+    if any("/A,/B" in command or "/DX,/L1" in command for command in commands_run):
+        raise AssertionError(f"recolor should not comma-join chain specs: {commands_run!r}")
+    color_commands = [command for command in commands_run if command.startswith("color ")]
+    if len(color_commands) != 4:
+        raise AssertionError(f"expected one color command per chain: {commands_run!r}")
+    if any("mutation" in command.lower() for command in commands_run):
+        raise AssertionError(f"recolor should not touch mutation-score data: {commands_run!r}")
 
     print("AlphaMissense target smoke test passed.")
     return 0
