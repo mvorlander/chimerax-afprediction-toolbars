@@ -1311,7 +1311,7 @@ def _run_contact_workflow(
     if update_display:
         commands = [
             "rainbow " + structure_spec + " chains palette bupu",
-            "color byhetero",
+            "color " + structure_spec + " byhetero",
         ]
         for command in commands:
             run(session, command)
@@ -1414,7 +1414,43 @@ def _disable_pae_drag_coloring(plot) -> None:
         plot._drag_colors_structure = False
 
 
-def create_pae_plot(session, pae):
+def color_pae_domains(pae):
+    """Use native clustering, then color whole collections per domain."""
+    model = pae.structure
+    if model is None:
+        return
+    if pae.residues_or_atoms_deleted():
+        raise UserError("Structure residues or atoms were deleted; domains cannot be colored.")
+    from chimerax.alphafold.pae import pae_domains, set_pae_domain_attribute
+    from chimerax.atomic import Atom, Atoms, Residue, Residues
+    from chimerax.core.colors import random_colors
+    from chimerax.core.commands import log_equivalent_command
+
+    pae.set_default_domain_clustering(None, None, None)
+    if pae._clusters is None:
+        pae._clusters = pae_domains(pae.pae_matrix, pae_cutoff=pae._cluster_max_pae,
+                                   graph_resolution=pae._cluster_clumping,
+                                   min_size=pae._cluster_min_size)
+        pae._cluster_colors = random_colors(len(pae._clusters), seed=0)
+    log_equivalent_command(model.session, f"alphafold pae #{model.id_string} colorDomains true")
+    rows = pae.row_residues_or_atoms()
+    for cluster, color in zip(pae._clusters, pae._cluster_colors):
+        objects = [rows[i] for i in cluster]
+        residues = Residues([r for r in objects if isinstance(r, Residue)])
+        residues.ribbon_colors = color
+        residues.atoms.colors = color
+        atoms = Atoms([a for a in objects if isinstance(a, Atom)])
+        atoms.colors = color
+    set_pae_domain_attribute(rows, pae._clusters)
+
+
+def create_pae_plot(session, pae, stack=None):
+    if stack is not None:
+        from .ui import workspace_pae_plot
+        plot = workspace_pae_plot(session, pae, stack)
+        _prepare_pae_plot(plot, pae)
+        return plot
+
     from chimerax.alphafold.pae import AlphaFoldPAEPlot
 
     plot = AlphaFoldPAEPlot(
@@ -1539,7 +1575,8 @@ def apply_interchain_pae_visibility(
         _clear_pae_highlight(plot)
         return f"Restored cartoon-only display for {structure}."
 
-    residues, cells = _interchain_pae_filter(pae, max_pae, chain_pair)
+    residues, cells = _interchain_pae_filter(
+        pae, max_pae, chain_pair, include_cells=highlight and plot is not None)
     if highlight:
         highlight_pae_cells(plot, cells)
     elif plot is not None:
@@ -1581,7 +1618,8 @@ def preview_interchain_pae_residues(
     select: bool = True,
     highlight: bool = True,
 ):
-    residues, cells = _interchain_pae_filter(pae, max_pae, chain_pair)
+    residues, cells = _interchain_pae_filter(
+        pae, max_pae, chain_pair, include_cells=highlight and plot is not None)
     if select:
         _select_residues(session, residues)
     if highlight:
@@ -1912,64 +1950,31 @@ def _show_only_residue_cartoons(session, structure_model, residues) -> None:
 
 def _residues_for_structure(structure_model, residues):
     from chimerax.atomic import Residues
-
     if structure_model is None or residues is None:
         return Residues([])
-    selected = [
-        residue
-        for residue in residues
-        if residue is not None
-        and not getattr(residue, "deleted", False)
-        and getattr(residue, "structure", None) is structure_model
-    ]
-    return Residues(selected)
-
+    return structure_model.residues.intersect(Residues(residues))
 
 def _residue_complement(structure_model, keep_residues):
     from chimerax.atomic import Residues
-
     if structure_model is None or getattr(structure_model, "deleted", False):
         return Residues([])
-    keep = set(keep_residues)
-    return Residues([residue for residue in structure_model.residues if residue not in keep])
-
+    all_residues = structure_model.residues
+    return all_residues.filter(~all_residues.mask(keep_residues))
 
 def _hide_bonds_touching_residues(structure_model, residues) -> None:
-    residue_set = set(residues)
-    if not residue_set:
+    if not len(residues):
         return
-    try:
-        from chimerax.atomic import Bonds
-
-        bonds = []
-        for bond in structure_model.bonds:
-            atom_a, atom_b = bond.atoms
-            if atom_a.residue in residue_set or atom_b.residue in residue_set:
-                bonds.append(bond)
-        if bonds:
-            Bonds(bonds).displays = False
-    except Exception:
-        pass
-
+    bonds = structure_model.bonds
+    a, b = bonds.atoms
+    bonds.filter(a.residues.mask(residues) | b.residues.mask(residues)).displays = False
 
 def _hide_pseudobonds_touching_residues(structure_model, residues) -> None:
-    residue_set = set(residues)
-    if not residue_set:
+    if not len(residues):
         return
-    try:
-        from chimerax.atomic import Pseudobonds
-
-        pbonds = []
-        for group in structure_model.pbg_map.values():
-            for pseudobond in group.pseudobonds:
-                atom_a, atom_b = pseudobond.atoms
-                if atom_a.residue in residue_set or atom_b.residue in residue_set:
-                    pbonds.append(pseudobond)
-        if pbonds:
-            Pseudobonds(pbonds).displays = False
-    except Exception:
-        pass
-
+    for group in structure_model.pbg_map.values():
+        bonds = group.pseudobonds
+        a, b = bonds.atoms
+        bonds.filter(a.residues.mask(residues) | b.residues.mask(residues)).displays = False
 
 def _hide_all_pseudobonds(structure_model) -> None:
     try:
@@ -2072,21 +2077,29 @@ def _label_contact_pseudobonds(session, structure_model, pseudobond_name: str) -
         from chimerax.core.objects import Objects
         from chimerax.label.label3d import label
 
-        label_count = 0
+        from chimerax.label.label3d import labels_model
+        valid = []
+        values = []
         for pseudobond in pbonds:
-            pae_value = _pseudobond_pae_value(structure_model, pseudobond)
-            if pae_value is None:
-                continue
-            label(
-                session,
-                Objects(pseudobonds=Pseudobonds([pseudobond])),
-                object_type="pseudobonds",
-                text=f"{pae_value:.1f}",
-                color=tuple(pseudobond.color),
-                bg_color="none",
-            )
-            label_count += 1
-        return label_count
+            value = _pseudobond_pae_value(structure_model, pseudobond)
+            if value is not None:
+                valid.append(pseudobond)
+                values.append(value)
+        if not valid:
+            return 0
+        label(session, Objects(pseudobonds=Pseudobonds(valid)),
+              object_type="pseudobonds", text="", bg_color="none")
+        by_group = {}
+        for pseudobond, value in zip(valid, values):
+            by_group.setdefault(pseudobond.group, []).append((pseudobond, value))
+        for group, pairs in by_group.items():
+            model = labels_model(group)
+            for pseudobond, value in pairs:
+                for item in model.labels([pseudobond]):
+                    item.text = f"{value:.1f}"
+                    item.color = tuple(pseudobond.color)
+            model.update_labels()
+        return len(valid)
     except Exception as err:
         session.logger.warning(
             f"Could not label AF contact pseudobonds with PAE values: {err}"
@@ -2523,61 +2536,23 @@ def _split_residue_token(token: str) -> Tuple[str, str]:
 
 def highlight_pae_cells(plot, cells, emphasis_cells=None) -> None:
     _clear_pae_highlight(plot)
-    if plot is None or _plot_closed(plot) or not cells:
+    if plot is None or _plot_closed(plot) or cells is None or not cells.any():
         return
-    try:
-        view = plot._pae_view
-        scene = view.scene()
-    except Exception:
-        return
+    from .performance import overlay_indices
+    from Qt.QtGui import QColor, QImage, QPixmap
 
-    try:
-        from Qt.QtGui import QBrush, QColor, QPen
-
-        selection_style = emphasis_cells is not None
-        if selection_style:
-            brush = QBrush(QColor(255, 191, 0, 16))
-            pen = QPen(QColor(0, 0, 0, 45))
-        else:
-            brush = QBrush(QColor(255, 191, 0, 45))
-            pen = QPen(QColor(0, 0, 0, 180))
-        items = []
-        for top, left, bottom, right in _cell_rectangles(cells):
-            items.append(
-                scene.addRect(
-                    left,
-                    top,
-                    right - left + 1,
-                    bottom - top + 1,
-                    pen=pen,
-                    brush=brush,
-                )
-            )
-        for item in items:
-            item.setZValue(2)
-        if emphasis_cells:
-            emphasis_brush = QBrush(QColor(255, 191, 0, 115))
-            emphasis_pen = QPen(QColor(0, 0, 0, 225))
-            try:
-                emphasis_pen.setWidthF(1.4)
-            except Exception:
-                pass
-            for top, left, bottom, right in _cell_rectangles(emphasis_cells):
-                items.append(
-                    scene.addRect(
-                        left,
-                        top,
-                        right - left + 1,
-                        bottom - top + 1,
-                        pen=emphasis_pen,
-                        brush=emphasis_brush,
-                    )
-                )
-                items[-1].setZValue(3)
-        plot._af_toolbar_highlight_items = items
-    except Exception:
-        _clear_pae_highlight(plot)
-
+    pixels = overlay_indices(cells, emphasis_cells)
+    height, width = pixels.shape
+    image = QImage(pixels.data, width, height, pixels.strides[0], QImage.Format_Indexed8)
+    selection_style = emphasis_cells is not None
+    colors = [(0, 0, 0, 0), (255, 191, 0, 16 if selection_style else 45),
+              (0, 0, 0, 45 if selection_style else 180),
+              (255, 191, 0, 115), (0, 0, 0, 225)]
+    image.setColorTable([QColor(*rgba).rgba() for rgba in colors])
+    # QPixmap copies the indexed buffer; no Python backing array survives the call.
+    item = plot._pae_view.scene().addPixmap(QPixmap.fromImage(image))
+    item.setZValue(2)
+    plot._af_toolbar_highlight_items = [item]
 
 def highlight_selected_residues_in_pae(
     session, pae, plot=None, interchain_only: bool = False
@@ -2600,44 +2575,20 @@ def highlight_selected_residues_in_pae(
         _clear_pae_highlight(plot)
         return Residues([]), f"No selected residues are in {structure}."
 
+    import numpy as np
+    from .performance import selection_masks
     selected_set = set(selected)
-    row_residues = [
-        _residue_for_pae_row(row) for row in pae.row_residues_or_atoms()
-    ]
-    selected_indices = [
-        index
-        for index, residue in enumerate(row_residues)
-        if residue is not None
-        and not getattr(residue, "deleted", False)
-        and residue in selected_set
-    ]
-    if not selected_indices:
+    row_residues, chains, _ = _pae_row_metadata(pae)
+    selected_mask = np.array([r in selected_set and chains[i] >= 0
+                              for i, r in enumerate(row_residues)], dtype=bool)
+    selected_indices = selected_mask.nonzero()[0]
+    if not len(selected_indices):
         _clear_pae_highlight(plot)
         return Residues([]), f"No selected residues in {structure} map to this PAE plot."
-
-    cells = set()
-    emphasis_cells = set()
-    size = len(row_residues)
-    for index in selected_indices:
-        residue = row_residues[index]
-        for paired_index in range(size):
-            paired_residue = row_residues[paired_index]
-            if interchain_only:
-                if (
-                    paired_residue is None
-                    or getattr(paired_residue, "deleted", False)
-                    or residue.chain_id == paired_residue.chain_id
-                ):
-                    continue
-            cells.add((index, paired_index))
-            cells.add((paired_index, index))
-            if paired_residue in selected_set:
-                emphasis_cells.add((index, paired_index))
-                emphasis_cells.add((paired_index, index))
-    if not cells:
+    cells, emphasis_cells = selection_masks(selected_mask, chains, interchain_only)
+    if not cells.any():
         _clear_pae_highlight(plot)
-        scope = "inter-chain PAE cells" if interchain_only else "PAE cells"
-        return Residues([]), f"No selected residues map to {scope}."
+        return Residues([]), "No selected residues map to PAE cells."
     highlight_pae_cells(plot, cells, emphasis_cells=emphasis_cells)
 
     residues = []
@@ -2675,21 +2626,16 @@ def _clear_pae_highlight(plot) -> None:
 
 def _select_residues(session, residues) -> None:
     session.selection.clear()
-    if not residues:
+    if not len(residues):
         return
-    from chimerax.atomic import Atoms
-
-    atoms = []
-    for residue in residues:
-        if residue is not None and not getattr(residue, "deleted", False):
-            atoms.extend(residue.atoms)
-    if atoms:
-        selected_atoms = Atoms(atoms)
-        selected_atoms.intra_bonds.displays = True
-        selected_atoms.selected = True
-        selected_atoms.intra_bonds.selected = True
-        selected_atoms.intra_pseudobonds.selected = True
-
+    from chimerax.atomic import Residues
+    atoms = Residues(residues).atoms
+    if len(atoms):
+        bonds = atoms.intra_bonds
+        bonds.displays = True
+        atoms.selected = True
+        bonds.selected = True
+        atoms.intra_pseudobonds.selected = True
 
 def _contiguous_ranges(indices):
     indices = sorted(set(indices))
@@ -2782,43 +2728,35 @@ def _residue_plddt(residue) -> Optional[float]:
 
 
 def _residues_with_min_interchain_pae_below(pae, max_pae: float, chain_pair=None):
-    residues, _cells = _interchain_pae_filter(pae, max_pae, chain_pair)
+    residues, _cells = _interchain_pae_filter(pae, max_pae, chain_pair, include_cells=False)
     return residues
 
 
-def _interchain_pae_filter(pae, max_pae: float, chain_pair=None):
-    matrix = pae.pae_matrix
-    rows = pae.row_residues_or_atoms()
-    row_residues = [_residue_for_pae_row(row) for row in rows]
-    selected_residue_set = set()
-    cells = set()
-    allowed_chain_pairs = _allowed_chain_pairs(chain_pair)
-    size = len(row_residues)
-    for i in range(size):
-        ri = row_residues[i]
-        if ri is None or getattr(ri, "deleted", False):
-            continue
-        for j in range(size):
-            if j == i:
-                continue
-            rj = row_residues[j]
-            if rj is None or getattr(rj, "deleted", False):
-                continue
-            if not _chains_allowed(ri.chain_id, rj.chain_id, allowed_chain_pairs):
-                continue
-            pair_pae = float(matrix[i, j])
-            if pair_pae < max_pae:
-                cells.add((i, j))
-                selected_residue_set.add(ri)
-                selected_residue_set.add(rj)
+def _interchain_pae_filter(pae, max_pae: float, chain_pair=None, include_cells=True):
+    from .performance import interchain_mask
+    row_residues, chains, codes = _pae_row_metadata(pae)
+    pair_codes = None if chain_pair is None else tuple(codes.get(c, -2) for c in chain_pair)
+    selected, cells = interchain_mask(pae.pae_matrix, chains, max_pae, pair_codes, include_cells)
     residues = []
     seen = set()
-    for residue in row_residues:
-        if residue in selected_residue_set and residue not in seen:
+    for index in selected.nonzero()[0]:
+        residue = row_residues[index]
+        if residue not in seen:
             residues.append(residue)
             seen.add(residue)
     return residues, cells
 
+
+def _pae_row_metadata(pae):
+    import numpy as np
+    residues = [_residue_for_pae_row(row) for row in pae.row_residues_or_atoms()]
+    codes = {}
+    chains = np.full(len(residues), -1, dtype=np.int32)
+    for index, residue in enumerate(residues):
+        if residue is not None and not getattr(residue, "deleted", False):
+            chain = residue.chain_id
+            chains[index] = codes.setdefault(chain, len(codes))
+    return residues, chains, codes
 
 def _allowed_chain_pairs(chain_pair):
     if chain_pair is None:

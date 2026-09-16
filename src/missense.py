@@ -323,13 +323,14 @@ def apply_missense_coloring(
         raise UserError("No mapped AlphaMissense chains are available to recolor.")
 
     range_text = f"{score_min:g},{score_max:g}"
-    for index, target_spec in enumerate(specs):
-        run(
-            session,
-            f"color byattribute r:{attr_name} {target_spec} "
-            f"target csab palette bluered range {range_text}"
-            + (" key true" if show_color_key and index == 0 else ""),
-        )
+    # An explicit union handles different model IDs and multi-character chains.
+    # The fixed color range makes one bulk command equivalent to per-chain colors.
+    target_union = " | ".join(f"({spec})" for spec in specs)
+    run(session, f"color byattribute r:{attr_name} {target_union} "
+        f"target csab palette bluered range {range_text}"
+        + (" key true" if show_color_key else ""))
+    for target_spec in specs:
+        # Preserve each chain's automatic worm-radius range.
         run(session, f"cartoon byattribute r:{attr_name} {target_spec}")
 
 

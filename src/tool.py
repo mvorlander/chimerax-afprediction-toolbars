@@ -64,116 +64,71 @@ class AFPredictionLauncher(ToolInstance):
 
     def __init__(self, session, tool_name):
         super().__init__(session, tool_name)
-
         from chimerax.ui import MainToolWindow
+        from .ui import build_workspace
 
-        self.tool_window = tw = MainToolWindow(self, close_destroys=False)
-        parent = tw.ui_area
-
-        from Qt.QtWidgets import (
-            QFileDialog,
-            QFrame,
-            QGridLayout,
-            QHBoxLayout,
-            QLabel,
-            QLineEdit,
-            QPushButton,
-            QTextEdit,
-            QVBoxLayout,
-        )
-
-        self._file_dialog_class = QFileDialog
+        self.display_name = "AF Workspace"
+        self.tool_window = MainToolWindow(self, close_destroys=False)
         self._mode = "af3-all"
         self._controller = None
-
-        layout = QVBoxLayout(parent)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
-
-        self._title_label = QLabel(parent)
-        layout.addWidget(self._title_label)
-
-        self._description_label = QLabel(parent)
-        self._description_label.setWordWrap(True)
-        layout.addWidget(self._description_label)
-
-        form = QFrame(parent)
-        form_layout = QGridLayout(form)
-        form_layout.setContentsMargins(0, 0, 0, 0)
-        form_layout.setHorizontalSpacing(8)
-        form_layout.setVerticalSpacing(8)
-        layout.addWidget(form)
-
-        row = 0
-        self._directory_label = QLabel("Prediction folder", form)
-        form_layout.addWidget(self._directory_label, row, 0)
-        self._directory_entry = QLineEdit(form)
-        self._directory_entry.setPlaceholderText("Choose an AF2 or AF3 output folder")
-        self._directory_entry.editingFinished.connect(self._refresh_preview)
-        form_layout.addWidget(self._directory_entry, row, 1)
-        browse_button = QPushButton("Browse...", form)
-        browse_button.clicked.connect(self._choose_directory)
-        form_layout.addWidget(browse_button, row, 2)
-
-        row += 1
-        self._filter_label = QLabel("Name/filter", form)
-        form_layout.addWidget(self._filter_label, row, 0)
-        self._prediction_filter_entry = QLineEdit(form)
-        self._prediction_filter_entry.setPlaceholderText(
-            "Optional text that must appear in matching filenames"
-        )
-        self._prediction_filter_entry.editingFinished.connect(self._refresh_preview)
-        form_layout.addWidget(self._prediction_filter_entry, row, 1, 1, 2)
-
-        row += 1
-        form_layout.addWidget(QLabel("Align structures on chain", form), row, 0)
-        self._chain_entry = QLineEdit(form)
-        self._chain_entry.setPlaceholderText("Blank = first chain in each structure")
-        form_layout.addWidget(self._chain_entry, row, 1, 1, 2)
-
-        self._preview = QTextEdit(parent)
-        self._preview.setReadOnly(True)
-        self._preview.setMinimumHeight(120)
-        layout.addWidget(self._preview)
-
-        button_row = QHBoxLayout()
-        layout.addLayout(button_row)
-        button_row.addStretch(1)
-
-        scan_button = QPushButton("Scan", parent)
-        scan_button.clicked.connect(self._refresh_preview)
-        button_row.addWidget(scan_button)
-
-        run_button = QPushButton("Run", parent)
-        run_button.clicked.connect(self._run_analysis)
-        button_row.addWidget(run_button)
-
-        layout.addStretch(1)
-
-        self.set_mode("af3-all", prompt_for_directory=False)
-        tw.manage(placement="side")
+        self._picker = None
+        self._missense = None
+        build_workspace(self)
+        self.set_mode("af3-all")
+        self.tool_window.manage(placement="side")
 
     @classmethod
     def get_singleton(cls, session, create=True, display=False):
         from chimerax.core import tools
-
         return tools.get_singleton(
-            session, cls, "AF Prediction Launcher", create=create, display=display
+            session, cls, "AF Workspace", create=create, display=display
         )
 
     def set_mode(self, mode, prompt_for_directory=False):
         if mode not in MODES:
             raise UserError(f"Unknown AF launcher mode: {mode}")
-
         self._mode = mode
-        config = MODES[mode]
-        self._title_label.setText(f"<b>{config['button_label']}</b>")
-        self._description_label.setText(config["description"])
+        self._mode_menu.blockSignals(True)
+        self._mode_menu.setCurrentIndex(self._mode_menu.findData(mode))
+        self._mode_menu.blockSignals(False)
+        self._mode_menu.setToolTip(MODES[mode]["description"])
         self._sync_mode_labels()
         self._refresh_preview()
-
+        # Toolbar shortcuts select a page; Browse is an explicit action.
         if prompt_for_directory:
-            self._choose_directory()
+            self.show_page(0)
+
+    def _page_changed(self, index):
+        if index == 1:
+            self._display_controller()
+        elif index == 2 and self._picker is None:
+            self._picker = HTColabFoldPicker(self.session, workspace=self)
+            self._install_page(2, self._picker.page, "Screen")
+        elif index == 3:
+            if self._missense is None:
+                self._missense = AFMissenseTool(self.session, workspace=self)
+                self._install_page(3, self._missense.page, "Missense")
+            self._missense._refresh_selection()
+
+    def _install_page(self, index, page, name):
+        old = self._tabs.widget(index)
+        active = self._tabs.currentIndex()
+        self._tabs.blockSignals(True)
+        self._tabs.removeTab(index)
+        self._tabs.insertTab(index, page, name)
+        self._tabs.setCurrentIndex(active)
+        self._tabs.blockSignals(False)
+        old.deleteLater()
+
+    def show_page(self, index):
+        self._page_changed(index)
+        self._tabs.setCurrentIndex(index)
+        self.tool_window.shown = True
+
+    def delete(self):
+        if self._controller is not None:
+            self._controller.delete()
+        super().delete()
 
     def _choose_directory(self):
         start_dir = self._directory_entry.text().strip() or str(Path.home())
@@ -228,14 +183,14 @@ class AFPredictionLauncher(ToolInstance):
             )
             self._filter_label.setText("Hit id")
             self._prediction_filter_entry.setPlaceholderText(
-                "Number before first underscore, e.g. 1"
+                "Hit number, e.g. 1"
             )
         else:
-            self._directory_label.setText("Prediction folder")
+            self._directory_label.setText("Folder")
             self._directory_entry.setPlaceholderText("Choose an AF2 or AF3 output folder")
-            self._filter_label.setText("Name/filter")
+            self._filter_label.setText("Filter")
             self._prediction_filter_entry.setPlaceholderText(
-                "Optional text that must appear in matching filenames"
+                "Optional filename filter"
             )
 
     def _run_analysis(self):
@@ -258,120 +213,41 @@ class AFPredictionLauncher(ToolInstance):
         self.session.logger.info(result.summary)
 
     def _display_controller(self):
-        if self._controller is None or getattr(self._controller, "_deleted", False):
-            self._controller = AFDisplayController(self.session)
+        if self._controller is None:
+            self._controller = AFDisplayController(self.session, workspace=self)
+            self._install_page(1, self._controller.page, "Inspect")
         return self._controller
 
 
-class HTColabFoldPicker(ToolInstance):
-    SESSION_SAVE = False
+class _WorkspacePanel:
+    """Behavior owned by the workspace, without registering another tool/window."""
+    def __init__(self, session, workspace):
+        self.session = session
+        self.workspace = workspace
+        self.tool_window = workspace.tool_window
 
-    def __init__(self, session, tool_name="HT-ColabFold Picker"):
-        super().__init__(session, tool_name)
 
-        from chimerax.ui import MainToolWindow
-        from Qt.QtCore import Qt, QUrl
-        from Qt.QtGui import QColor
-        from Qt.QtWidgets import (
-            QAbstractItemView,
-            QFileDialog,
-            QComboBox,
-            QHBoxLayout,
-            QLabel,
-            QLineEdit,
-            QPushButton,
-            QTableWidget,
-            QTableWidgetItem,
-            QVBoxLayout,
-        )
-
-        self.tool_window = tw = MainToolWindow(self, close_destroys=False)
-        parent = tw.ui_area
-        self._file_dialog_class = QFileDialog
-        self._qt = Qt
-        self._table_item_class = QTableWidgetItem
-        self._opened_background = QColor("#e3f8e8")
-        self._qurl_class = QUrl
+class HTColabFoldPicker(_WorkspacePanel):
+    def __init__(self, session, workspace):
+        super().__init__(session, workspace)
         self._plot_path = None
         self._plot_html = ""
         self._hits = ()
         self._opened_hit_ids = set()
-
-        layout = QVBoxLayout(parent)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
-
-        title = QLabel("<b>HT-ColabFold screen picker</b>", parent)
-        layout.addWidget(title)
-        description = QLabel(
-            "Loads IPTM_vs_PTM.txt, regenerates a clickable PEAK/IPTM plot, "
-            "and opens the clicked hit with the AF Model/PAE Slider.",
-            parent,
-        )
-        description.setWordWrap(True)
-        layout.addWidget(description)
-
-        folder_row = QHBoxLayout()
-        layout.addLayout(folder_row)
-        folder_row.addWidget(QLabel("Screen dir", parent))
-        self._directory_entry = QLineEdit(parent)
-        self._directory_entry.setPlaceholderText("Choose an HT-ColabFold screen directory")
-        folder_row.addWidget(self._directory_entry, 1)
-        browse_button = QPushButton("Browse...", parent)
-        browse_button.clicked.connect(self._choose_directory)
-        folder_row.addWidget(browse_button)
-
-        control_row = QHBoxLayout()
-        layout.addLayout(control_row)
-        control_row.addWidget(QLabel("Open mode", parent))
-        self._mode_combo = QComboBox(parent)
-        self._mode_combo.addItem("All ranks", "htcf-all")
-        self._mode_combo.addItem("Top rank", "htcf-top")
-        control_row.addWidget(self._mode_combo)
-        load_button = QPushButton("Load Plot", parent)
-        load_button.clicked.connect(self._load_plot)
-        control_row.addWidget(load_button)
-        browser_button = QPushButton("Open HTML", parent)
-        browser_button.clicked.connect(self._open_html_in_browser)
-        control_row.addWidget(browser_button)
-        control_row.addStretch(1)
-
-        self._status_label = QLabel("Choose a screen directory and load the plot.", parent)
-        self._status_label.setWordWrap(True)
-        layout.addWidget(self._status_label)
-
-        self._plot_widget = self._make_plot_widget(parent)
-        layout.addWidget(self._plot_widget, 1)
-
-        self._hit_table = QTableWidget(parent)
-        self._hit_table.setColumnCount(6)
-        self._hit_table.setHorizontalHeaderLabels(
-            ["Hit id", "IPTMavg", "scaled_PEAKavg", "Status", "Opened", "Name"]
-        )
-        self._hit_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._hit_table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self._hit_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self._hit_table.itemDoubleClicked.connect(
-            lambda item: self._open_hit_from_row(item.row())
-        )
-        layout.addWidget(self._hit_table, 1)
-
-        table_row = QHBoxLayout()
-        layout.addLayout(table_row)
-        open_selected_button = QPushButton("Open Selected Hit", parent)
-        open_selected_button.clicked.connect(self._open_selected_hit)
-        table_row.addWidget(open_selected_button)
-        table_row.addStretch(1)
-
-        tw.manage(placement="side")
+        from .ui import build_picker
+        build_picker(self)
 
     @classmethod
     def get_singleton(cls, session, create=True, display=False):
-        from chimerax.core import tools
-
-        return tools.get_singleton(
-            session, cls, "HT-ColabFold Picker", create=create, display=display
-        )
+        workspace = AFPredictionLauncher.get_singleton(session, create=create)
+        if workspace is None:
+            return None
+        if not create and workspace._picker is None:
+            return None
+        workspace._page_changed(2)
+        if display:
+            workspace.show_page(2)
+        return workspace._picker
 
     def _make_plot_widget(self, parent):
         try:
@@ -574,26 +450,11 @@ def _format_picker_float(value):
     return f"{float(value):.4g}"
 
 
-class AFDisplayController(ToolInstance):
+class AFDisplayController(_WorkspacePanel):
     SESSION_SAVE = False
 
-    def __init__(self, session):
-        from chimerax.ui import MainToolWindow
-        from Qt.QtCore import Qt
-        from Qt.QtWidgets import (
-            QCheckBox,
-            QComboBox,
-            QGroupBox,
-            QHBoxLayout,
-            QLabel,
-            QLineEdit,
-            QPushButton,
-            QSlider,
-            QVBoxLayout,
-        )
-
-        super().__init__(session, "AF Display Controller")
-
+    def __init__(self, session, workspace):
+        super().__init__(session, workspace)
         self._runs = []
         self._current_run_index = -1
         self._current_pair_index = 0
@@ -604,404 +465,13 @@ class AFDisplayController(ToolInstance):
         self._plddt_preview_count = None
         self._selection_sync_count = None
         self._selection_sync_handler = None
-
-        self.tool_window = tw = MainToolWindow(self)
-        parent = tw.ui_area
-
-        layout = QVBoxLayout(parent)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
-
-        title = QLabel("<b>AF Model/PAE Slider</b>", parent)
-        layout.addWidget(title)
-
-        top_action_row = QHBoxLayout()
-        layout.addLayout(top_action_row)
-        reset_display_button = QPushButton("Reset Active Run", parent)
-        reset_display_button.setToolTip(
-            "Restore this run to the initial model, PAE plot, cutoff, chain "
-            "filter, selection, and cartoon/contact-sidechain display."
-        )
-        reset_display_button.clicked.connect(self._reset_active_run_display)
-        top_action_row.addWidget(reset_display_button)
-        top_action_row.addStretch(1)
-
-        layout.addWidget(QLabel("Prediction run", parent))
-        self._run_menu = QComboBox(parent)
-        self._run_menu.currentIndexChanged.connect(self._set_run_index)
-        layout.addWidget(self._run_menu)
-
-        self._current_label = QLabel(parent)
-        self._current_label.setWordWrap(True)
-        layout.addWidget(self._current_label)
-
-        self._pair_menu = QComboBox(parent)
-        self._pair_menu.currentIndexChanged.connect(self._set_pair_index)
-        layout.addWidget(self._pair_menu)
-
-        slider_row = QHBoxLayout()
-        layout.addLayout(slider_row)
-        slider_row.addWidget(QLabel("Model/PAE", parent))
-        self._pair_slider = QSlider(Qt.Horizontal, parent)
-        self._pair_slider.setMinimum(0)
-        self._pair_slider.setMaximum(0)
-        self._pair_slider.setSingleStep(1)
-        self._pair_slider.setPageStep(1)
-        self._pair_slider.setTickInterval(1)
-        self._pair_slider.setTickPosition(QSlider.TicksBelow)
-        self._pair_slider.valueChanged.connect(self._set_pair_index)
-        slider_row.addWidget(self._pair_slider, 1)
-        self._slider_value_label = QLabel(parent)
-        slider_row.addWidget(self._slider_value_label)
-
-        nav_row = QHBoxLayout()
-        layout.addLayout(nav_row)
-        self._previous_button = QPushButton("Previous", parent)
-        self._previous_button.clicked.connect(self._show_previous)
-        nav_row.addWidget(self._previous_button)
-        self._next_button = QPushButton("Next", parent)
-        self._next_button.clicked.connect(self._show_next)
-        nav_row.addWidget(self._next_button)
-
-        self._show_all = QCheckBox("Show all structures in active run", parent)
-        self._show_all.stateChanged.connect(self._apply_visibility)
-        layout.addWidget(self._show_all)
-
-        confidence_header = QLabel(
-            "<b>Selection by prediction confidence</b>", parent
-        )
-        layout.addWidget(confidence_header)
-
-        pae_group = QGroupBox(parent)
-        pae_group.setToolTip(
-            "Select residues by prediction confidence. Use inter-chain PAE "
-            "for multimer contacts, or pLDDT for local confidence in monomers "
-            "and individual chains."
-        )
-        pae_group_layout = QVBoxLayout(pae_group)
-        pae_group_layout.setContentsMargins(8, 8, 8, 8)
-        pae_group_layout.setSpacing(6)
-        layout.addWidget(pae_group)
-
-        mode_row = QHBoxLayout()
-        pae_group_layout.addLayout(mode_row)
-        mode_row.addWidget(QLabel("Selection mode", pae_group))
-        self._confidence_mode_menu = QComboBox(pae_group)
-        self._confidence_mode_menu.addItem("PAE (inter-chain)", "pae")
-        self._confidence_mode_menu.addItem("pLDDT", "plddt")
-        self._confidence_mode_menu.currentIndexChanged.connect(
-            self._confidence_mode_changed
-        )
-        mode_row.addWidget(self._confidence_mode_menu, 1)
-
-        note = QLabel(
-            "PAE: lower is more stringent. pLDDT: higher is more stringent.",
-            pae_group,
-        )
-        note.setWordWrap(True)
-        pae_group_layout.addWidget(note)
-
-        pae_subheader = QLabel("<b>Inter-chain PAE</b>", pae_group)
-        pae_group_layout.addWidget(pae_subheader)
-
-        chain_pair_label = QLabel("PAE chain pair", pae_group)
-        self._pae_widgets = [pae_subheader, chain_pair_label]
-        chain_pair_label.setToolTip(
-            "Choose which chain pair is used by the PAE cutoff. "
-            "'All inter-chain pairs' means the best contact to any other "
-            "chain is considered."
-        )
-        pae_group_layout.addWidget(chain_pair_label)
-        self._chain_pair_menu = QComboBox(pae_group)
-        self._chain_pair_menu.addItem("All inter-chain pairs")
-        self._chain_pair_menu.setToolTip(
-            "Filters the PAE cutoff tool. It does not change which model is "
-            "displayed. All inter-chain pairs selects a residue if its "
-            "minimum PAE to at least one residue in any other chain is below "
-            "the cutoff."
-        )
-        self._chain_pair_menu.currentIndexChanged.connect(self._preview_low_pae_residues)
-        self._chain_pair_values.append(None)
-        pae_group_layout.addWidget(self._chain_pair_menu)
-        self._pae_widgets.append(self._chain_pair_menu)
-
-        pae_cutoff_row = QHBoxLayout()
-        pae_group_layout.addLayout(pae_cutoff_row)
-        cutoff_label = QLabel("PAE cutoff", pae_group)
-        self._pae_widgets.append(cutoff_label)
-        cutoff_label.setToolTip(
-            "Live-highlight residues whose best PAE to the selected partner "
-            "chain(s) is below this value. With All inter-chain pairs, at "
-            "least one partner residue in any other chain must be below the "
-            "cutoff. Smaller values are more stringent."
-        )
-        pae_cutoff_row.addWidget(cutoff_label)
-        self._pae_threshold_slider = QSlider(Qt.Horizontal, pae_group)
-        self._pae_threshold_slider.setMinimum(0)
-        self._pae_threshold_slider.setMaximum(30)
-        self._pae_threshold_slider.setSingleStep(1)
-        self._pae_threshold_slider.setPageStep(5)
-        self._pae_threshold_slider.setTickInterval(5)
-        self._pae_threshold_slider.setTickPosition(QSlider.TicksBelow)
-        self._pae_threshold_slider.setValue(10)
-        self._pae_threshold_slider.valueChanged.connect(self._pae_threshold_changed)
-        pae_cutoff_row.addWidget(self._pae_threshold_slider, 1)
-        self._pae_widgets.append(self._pae_threshold_slider)
-        self._pae_threshold_value_label = QLabel("10", pae_group)
-        self._pae_threshold_value_label.setMinimumWidth(24)
-        pae_cutoff_row.addWidget(self._pae_threshold_value_label)
-        self._pae_widgets.append(self._pae_threshold_value_label)
-
-        pae_action_row = QHBoxLayout()
-        pae_group_layout.addLayout(pae_action_row)
-        self._live_pae_highlight = QCheckBox("Live PAE highlight", pae_group)
-        self._pae_widgets.append(self._live_pae_highlight)
-        self._live_pae_highlight.setChecked(True)
-        self._live_pae_highlight.setToolTip(
-            "When enabled, moving the cutoff slider live-selects matching "
-            "residues and overlays only the below-cutoff inter-chain cells "
-            "in the PAE plot."
-        )
-        self._live_pae_highlight.stateChanged.connect(self._live_pae_highlight_changed)
-        pae_action_row.addWidget(self._live_pae_highlight)
-
-        self._sync_pae_to_selection = QCheckBox("Sync PAE to selection", pae_group)
-        self._pae_widgets.append(self._sync_pae_to_selection)
-        self._sync_pae_to_selection.setChecked(False)
-        self._sync_pae_to_selection.setToolTip(
-            "When enabled, ChimeraX residue selections made in the structure "
-            "or command line highlight the corresponding rows and columns in "
-            "the active PAE plot. This switches the PAE overlay from cutoff "
-            "previewing to manual selection tracking."
-        )
-        self._sync_pae_to_selection.stateChanged.connect(
-            self._sync_pae_to_selection_changed
-        )
-        pae_action_row.addWidget(self._sync_pae_to_selection)
-
-        self._sync_pae_interchain_only = QCheckBox("Only inter-chain PAE", pae_group)
-        self._pae_widgets.append(self._sync_pae_interchain_only)
-        self._sync_pae_interchain_only.setChecked(False)
-        self._sync_pae_interchain_only.setToolTip(
-            "When Sync PAE to selection is enabled, limit the PAE overlay to "
-            "cells between different chains. Leave this off to highlight the "
-            "full selected-residue rows and columns."
-        )
-        self._sync_pae_interchain_only.stateChanged.connect(
-            self._sync_pae_interchain_only_changed
-        )
-        pae_action_row.addWidget(self._sync_pae_interchain_only)
-
-        plddt_subheader = QLabel("<b>pLDDT confidence</b>", pae_group)
-        pae_group_layout.addWidget(plddt_subheader)
-
-        plddt_cutoff_row = QHBoxLayout()
-        pae_group_layout.addLayout(plddt_cutoff_row)
-        plddt_cutoff_label = QLabel("pLDDT cutoff", pae_group)
-        self._plddt_widgets = [plddt_subheader, plddt_cutoff_label]
-        plddt_cutoff_label.setToolTip(
-            "Select residues whose pLDDT confidence score is at or above this "
-            "value. Higher values are more stringent."
-        )
-        plddt_cutoff_row.addWidget(plddt_cutoff_label)
-        self._plddt_threshold_slider = QSlider(Qt.Horizontal, pae_group)
-        self._plddt_threshold_slider.setMinimum(0)
-        self._plddt_threshold_slider.setMaximum(100)
-        self._plddt_threshold_slider.setSingleStep(1)
-        self._plddt_threshold_slider.setPageStep(10)
-        self._plddt_threshold_slider.setTickInterval(10)
-        self._plddt_threshold_slider.setTickPosition(QSlider.TicksBelow)
-        self._plddt_threshold_slider.setValue(70)
-        self._plddt_threshold_slider.valueChanged.connect(self._plddt_threshold_changed)
-        plddt_cutoff_row.addWidget(self._plddt_threshold_slider, 1)
-        self._plddt_widgets.append(self._plddt_threshold_slider)
-        self._plddt_threshold_value_label = QLabel("70", pae_group)
-        self._plddt_threshold_value_label.setMinimumWidth(28)
-        plddt_cutoff_row.addWidget(self._plddt_threshold_value_label)
-        self._plddt_widgets.append(self._plddt_threshold_value_label)
-
-        plddt_action_row = QHBoxLayout()
-        pae_group_layout.addLayout(plddt_action_row)
-        self._live_plddt_highlight = QCheckBox("Live pLDDT selection", pae_group)
-        self._plddt_widgets.append(self._live_plddt_highlight)
-        self._live_plddt_highlight.setChecked(False)
-        self._live_plddt_highlight.setToolTip(
-            "When enabled, moving the pLDDT cutoff slider live-selects "
-            "matching residues. It is off by default so it does not override "
-            "the inter-chain PAE live selection."
-        )
-        self._live_plddt_highlight.stateChanged.connect(self._live_plddt_highlight_changed)
-        plddt_action_row.addWidget(self._live_plddt_highlight)
-
-        confidence_button_row = QHBoxLayout()
-        pae_group_layout.addLayout(confidence_button_row)
-        confidence_button_row.addStretch(1)
-        hide_unselected_button = QPushButton("Hide Unselected", pae_group)
-        hide_unselected_button.setToolTip(
-            "Hide atoms, pseudobonds, cartoons, and surfaces outside the "
-            "current confidence cutoff filter for every model in the active "
-            "run. Bond display flags are kept normal so atoms are not later "
-            "shown without their bonds."
-        )
-        hide_unselected_button.clicked.connect(
-            self._hide_unselected_confidence_residues
-        )
-        confidence_button_row.addWidget(hide_unselected_button)
-        show_only_button = QPushButton("Show Only", pae_group)
-        show_only_button.setToolTip(
-            "Apply the active confidence cutoff to every model in the active "
-            "run. In PAE mode this also refreshes AlphaFold contact side "
-            "chains, labels, and pseudobonds at the current threshold."
-        )
-        show_only_button.clicked.connect(self._show_only_confidence_residues)
-        confidence_button_row.addWidget(show_only_button)
-        show_all_button = QPushButton("Show All", pae_group)
-        show_all_button.setToolTip(
-            "Restore cartoon-only display for every model in the active run."
-        )
-        show_all_button.clicked.connect(self._show_all_current_model)
-        confidence_button_row.addWidget(show_all_button)
-
-        contact_display_row = QHBoxLayout()
-        pae_group_layout.addLayout(contact_display_row)
-        contact_display_row.addStretch(1)
-        show_contacts_button = QPushButton("Show AF contacts at threshold", pae_group)
-        show_contacts_button.setToolTip(
-            "Show AlphaFold contact side chains, labels, and pseudobonds for "
-            "the active model using the current PAE cutoff and PAE chain-pair "
-            "selection. AlphaFold contacts are based on prediction confidence "
-            "and spatial proximity. No files are written."
-        )
-        show_contacts_button.clicked.connect(self._show_contact_residues)
-        contact_display_row.addWidget(show_contacts_button)
-        self._pae_widgets.append(show_contacts_button)
-        toggle_contact_labels_button = QPushButton("Toggle Contact Labels", pae_group)
-        toggle_contact_labels_button.setToolTip(
-            "Hide or restore residue labels and PAE-value labels on the "
-            "currently displayed AlphaFold contact pseudobonds."
-        )
-        toggle_contact_labels_button.clicked.connect(self._toggle_contact_labels)
-        contact_display_row.addWidget(toggle_contact_labels_button)
-        self._pae_widgets.append(toggle_contact_labels_button)
-
-        interface_display_row = QHBoxLayout()
-        pae_group_layout.addLayout(interface_display_row)
-        interface_area_label = QLabel("Buried area cutoff", pae_group)
-        interface_area_label.setToolTip(
-            "Chain-level buried solvent-accessible surface area cutoff for "
-            "the ChimeraX interfaces command, in square Angstroms."
-        )
-        interface_display_row.addWidget(interface_area_label)
-        self._pae_widgets.append(interface_area_label)
-        self._interface_area_cutoff_entry = QLineEdit(pae_group)
-        self._interface_area_cutoff_entry.setText("300")
-        self._interface_area_cutoff_entry.setPlaceholderText("300")
-        self._interface_area_cutoff_entry.setToolTip(
-            "Default is 300 A^2, matching ChimeraX's chain interface area cutoff."
-        )
-        interface_display_row.addWidget(self._interface_area_cutoff_entry, 1)
-        self._pae_widgets.append(self._interface_area_cutoff_entry)
-        show_interfaces_button = QPushButton("Show interfaces at cutoff", pae_group)
-        show_interfaces_button.setToolTip(
-            "Run ChimeraX interfaces between the current PAE chain pair(s), "
-            "but only using residues that pass the current PAE cutoff. "
-            "Interface residues are then based on ChimeraX's spatial buried-area "
-            "criterion, not on AlphaFold contact confidence. The resulting "
-            "interface residues are shown as full sticks."
-        )
-        show_interfaces_button.clicked.connect(self._show_cutoff_interfaces)
-        interface_display_row.addWidget(show_interfaces_button)
-        self._pae_widgets.append(show_interfaces_button)
-
-        self._sync_confidence_mode_controls()
-
-        save_header = QLabel("<b>Save analysis results</b>", parent)
-        layout.addWidget(save_header)
-        save_group = QGroupBox(parent)
-        save_group_layout = QVBoxLayout(save_group)
-        save_group_layout.setContentsMargins(8, 8, 8, 8)
-        save_group_layout.setSpacing(6)
-        layout.addWidget(save_group)
-
-        analysis_row = QHBoxLayout()
-        save_group_layout.addLayout(analysis_row)
-        contact_settings_label = QLabel("Contacts use current PAE cutoff", save_group)
-        contact_settings_label.setToolTip(
-            "Saved AlphaFold contacts use the current PAE cutoff slider from "
-            "Selection by prediction confidence. Lower values are more stringent."
-        )
-        analysis_row.addWidget(contact_settings_label)
-        self._contact_scope_menu = QComboBox(save_group)
-        self._contact_scope_menu.addItem("All chain pairs", "all")
-        self._contact_scope_menu.addItem("Selected PAE pair", "selected")
-        self._contact_scope_menu.setToolTip(
-            "Choose whether saved AlphaFold contacts/interfaces are computed "
-            "for every inter-chain pair in the active model or only for the "
-            "specific pair currently chosen in the PAE chain-pair menu. If "
-            "the PAE menu is set to All inter-chain pairs, both options use "
-            "all pairs."
-        )
-        analysis_row.addWidget(self._contact_scope_menu)
-        run_contacts_button = QPushButton("Save Contacts and Interfaces", save_group)
-        run_contacts_button.setToolTip(
-            "Run ChimeraX alphafold contacts and interfaces for the active "
-            "model only using the selected PAE cutoff and chain-pair scope, "
-            "then write formatted reports to the active output folder."
-        )
-        run_contacts_button.clicked.connect(self._run_contacts_interfaces)
-        analysis_row.addWidget(run_contacts_button)
-
-        save_row = QHBoxLayout()
-        save_group_layout.addLayout(save_row)
-        save_row.addWidget(QLabel("File suffix", save_group))
-        self._png_suffix_entry = QLineEdit(save_group)
-        self._png_suffix_entry.setPlaceholderText("Optional filename suffix")
-        save_row.addWidget(self._png_suffix_entry, 1)
-        self._timestamp_files = QCheckBox("Timestamp", save_group)
-        self._timestamp_files.setChecked(True)
-        save_row.addWidget(self._timestamp_files)
-        save_png_button = QPushButton("Save PNG", save_group)
-        save_png_button.clicked.connect(self._save_transparent_png)
-        save_row.addWidget(save_png_button)
-        save_session_button = QPushButton("Save Session", save_group)
-        save_session_button.clicked.connect(self._save_chimerax_session)
-        save_row.addWidget(save_session_button)
-
-        output_row = QHBoxLayout()
-        save_group_layout.addLayout(output_row)
-        output_row.addStretch(1)
-        copy_output_button = QPushButton("Copy Output Path", save_group)
-        copy_output_button.clicked.connect(self._copy_output_path)
-        output_row.addWidget(copy_output_button)
-
-        manage_row = QHBoxLayout()
-        layout.addLayout(manage_row)
-        manage_row.addStretch(1)
-        close_run_button = QPushButton("Close Run", parent)
-        close_run_button.clicked.connect(self._close_current_run)
-        manage_row.addWidget(close_run_button)
-
-        self._status_label = QLabel(parent)
-        self._status_label.setWordWrap(True)
-        self._status_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        layout.addWidget(self._status_label)
-
-        self._details_group = QGroupBox("Run details", parent)
-        self._details_group.setCheckable(True)
-        self._details_group.setChecked(False)
-        details_layout = QVBoxLayout(self._details_group)
-        details_layout.setContentsMargins(8, 8, 8, 8)
-        self._output_label = QLabel(self._details_group)
-        self._output_label.setWordWrap(True)
-        self._output_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        details_layout.addWidget(self._output_label)
-        self._output_label.setVisible(False)
-        self._details_group.toggled.connect(self._output_label.setVisible)
-        layout.addWidget(self._details_group)
-
-        layout.addStretch(1)
-
-        tw.manage(placement="side")
+        from Qt.QtCore import QTimer
+        self._preview_timer = QTimer(workspace.tool_window.ui_area)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(100)
+        self._preview_timer.timeout.connect(self._preview_current_confidence)
+        from .ui import build_controller
+        build_controller(self)
 
     def _show_previous(self):
         pairs = self._current_pairs()
@@ -1028,15 +498,16 @@ class AFDisplayController(ToolInstance):
         self._run_menu.addItem(run["label"])
         self._run_menu.blockSignals(False)
         self._set_run_index(len(self._runs) - 1)
-        try:
-            self.tool_window.shown = True
-        except Exception:
-            pass
+        self.workspace.show_page(1)
 
     def delete(self):
         self._deleted = True
+        self._preview_timer.stop()
         self._remove_selection_sync_handler()
-        super().delete()
+        for run in self._runs:
+            plot = run.get("pae_plot")
+            if plot is not None and not _plot_closed(plot):
+                plot.delete()
 
     def _unique_run_label(self, result):
         base = result.run_label
@@ -1093,6 +564,12 @@ class AFDisplayController(ToolInstance):
         self._pair_slider.setMaximum(max(len(pairs) - 1, 0))
         self._pair_slider.setValue(self._current_pair_index if pairs else 0)
         self._pair_slider.blockSignals(False)
+        self._previous_button.setEnabled(len(pairs) > 1)
+        self._next_button.setEnabled(len(pairs) > 1)
+        self._pair_slider.setEnabled(len(pairs) > 1 and not self._show_all.isChecked())
+        self._pair_menu.setEnabled(bool(pairs))
+        self._show_all.setEnabled(bool(pairs))
+        self._inspect_tabs.setEnabled(bool(pairs))
         if pairs:
             self._slider_value_label.setText(
                 f"{self._current_pair_index + 1}/{len(pairs)}"
@@ -1179,9 +656,9 @@ class AFDisplayController(ToolInstance):
             return None
         plot = run.get("pae_plot")
         if plot is None or _plot_closed(plot):
-            plot = create_pae_plot(self.session, pae)
+            plot = create_pae_plot(self.session, pae, stack=self._pae_stack)
             run["pae_plot"] = plot
-        else:
+        elif getattr(plot, "_pae", None) is not pae:
             set_pae_plot_data(plot, pae)
         return plot
 
@@ -1224,7 +701,7 @@ class AFDisplayController(ToolInstance):
     def _pae_threshold_changed(self, value):
         self._pae_threshold_value_label.setText(str(value))
         if self._confidence_mode() == "pae":
-            self._preview_low_pae_residues()
+            self._preview_timer.start()
 
     def _plddt_threshold(self):
         return float(self._plddt_threshold_slider.value())
@@ -1232,6 +709,12 @@ class AFDisplayController(ToolInstance):
     def _plddt_threshold_changed(self, value):
         self._plddt_threshold_value_label.setText(str(value))
         if self._confidence_mode() == "plddt":
+            self._preview_timer.start()
+
+    def _preview_current_confidence(self):
+        if self._confidence_mode() == "pae":
+            self._preview_low_pae_residues()
+        else:
             self._preview_plddt_residues()
 
     def _interface_area_cutoff(self):
@@ -1371,12 +854,13 @@ class AFDisplayController(ToolInstance):
 
     def _sync_confidence_mode_controls(self):
         mode = self._confidence_mode()
-        for widget in getattr(self, "_pae_widgets", []):
-            widget.setEnabled(mode == "pae")
-        for widget in getattr(self, "_plddt_widgets", []):
-            widget.setEnabled(mode == "plddt")
+        self._pae_panel.setVisible(mode == "pae")
+        self._plddt_panel.setVisible(mode == "plddt")
+        self._contacts_toggle.setVisible(mode == "pae")
+        self._contacts_panel.setVisible(mode == "pae" and self._contacts_toggle.isChecked())
 
     def _preview_low_pae_residues(self, *_args):
+        self._preview_timer.stop()
         from .workflow import preview_interchain_pae_residues
 
         if self._confidence_mode() != "pae":
@@ -1394,6 +878,11 @@ class AFDisplayController(ToolInstance):
             return
         plot = run.get("pae_plot")
         live = self._live_pae_highlight.isChecked()
+        if not live:
+            self._clear_current_pae_highlight()
+            self._preview_count = None
+            self._update_status_strip()
+            return
         residues, message = preview_interchain_pae_residues(
             self.session,
             pae,
@@ -1407,6 +896,7 @@ class AFDisplayController(ToolInstance):
         self._update_status_strip()
 
     def _preview_plddt_residues(self, *_args):
+        self._preview_timer.stop()
         from .workflow import preview_plddt_residues
 
         if self._confidence_mode() != "plddt":
@@ -1419,6 +909,10 @@ class AFDisplayController(ToolInstance):
             self._update_status_strip()
             return
         live = self._live_plddt_highlight.isChecked()
+        if not live:
+            self._plddt_preview_count = None
+            self._update_status_strip()
+            return
         residues, _message = preview_plddt_residues(
             self.session,
             pair.get("model"),
@@ -1441,6 +935,7 @@ class AFDisplayController(ToolInstance):
             self._hide_unselected_plddt_for_run()
 
     def _show_all_current_model(self):
+        self._preview_timer.stop()
         if self._confidence_mode() == "pae":
             self._show_all_pae_for_run()
         else:
@@ -1890,6 +1385,7 @@ class AFDisplayController(ToolInstance):
             self._current_label.setText("No AF prediction runs are loaded.")
             self._output_label.clear()
         self._set_status(f"Closed run: {run['label']}")
+        self._sync_controls()
 
     def _close_run_models_and_tools(self, run):
         plot = run.get("pae_plot")
@@ -1919,33 +1415,24 @@ class AFDisplayController(ToolInstance):
         self._update_status_strip()
 
     def _update_status_strip(self):
-        run = self._current_run()
         pair = self._current_pair()
-        last = _compact_status_text(self._last_action)
-        if run is None or pair is None:
-            self._status_label.setText(f"Last: {last}")
+        if pair is None:
+            self._status_label.setText("Open predictions to begin.")
+            self._status_label.setToolTip(self._last_action)
             return
-        parts = [
-            f"{_display_pair_label(pair)}",
-            self._confidence_mode_label(),
-            f"PAE < {self._pae_threshold():g}",
-            f"pLDDT >= {self._plddt_threshold():g}",
-        ]
+        mode = self._confidence_mode()
+        cutoff = f"PAE < {self._pae_threshold():g}" if mode == "pae" else f"pLDDT ≥ {self._plddt_threshold():g}"
+        count = self._preview_count if mode == "pae" else self._plddt_preview_count
         if self._sync_pae_to_selection.isChecked():
-            selection_text = f"PAE synced to selection: {self._selection_sync_count or 0}"
-            if self._sync_pae_interchain_only.isChecked():
-                selection_text += " inter-chain only"
-            parts.append(selection_text)
-        elif not self._live_pae_highlight.isChecked():
-            parts.append("live highlight off")
-        if self._preview_count is not None:
-            parts.append(f"PAE highlighted: {self._preview_count}")
-        if self._plddt_preview_count is not None:
-            parts.append(f"pLDDT selected: {self._plddt_preview_count}")
-        confidence_warning = _confidence_warning(self._current_pairs())
-        if confidence_warning:
-            parts.append(confidence_warning)
-        self._status_label.setText(" | ".join(parts) + f" | Last: {last}")
+            count = self._selection_sync_count
+        status = cutoff
+        if count is not None:
+            status += f" · {count} residues"
+        warning = _confidence_warning(self._current_pairs())
+        if warning:
+            status += f" · {warning}"
+        self._status_label.setText(status + "\n" + _compact_status_text(self._last_action, limit=46))
+        self._status_label.setToolTip(self._last_action)
 
 
 def _plot_closed(plot):
@@ -1992,224 +1479,35 @@ def _compact_status_text(text, limit=120):
     return one_line[: max(0, limit - 3)] + "..."
 
 
-class AFMissenseTool(ToolInstance):
+class AFMissenseTool(_WorkspacePanel):
     SESSION_SAVE = False
 
-    def __init__(self, session, tool_name):
-        super().__init__(session, tool_name)
-
-        from chimerax.ui import MainToolWindow
-        from Qt.QtCore import Qt
-        from Qt.QtWidgets import (
-            QCheckBox,
-            QDoubleSpinBox,
-            QGridLayout,
-            QHBoxLayout,
-            QLabel,
-            QLineEdit,
-            QPushButton,
-            QToolButton,
-            QVBoxLayout,
-            QWidget,
-        )
-
-        self.tool_window = tw = MainToolWindow(self, close_destroys=False)
-        parent = tw.ui_area
+    def __init__(self, session, workspace):
+        super().__init__(session, workspace)
         self._last_missense_targets = []
         self._last_missense_attr = "amiss_avg"
-
-        layout = QVBoxLayout(parent)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
-
-        title = QLabel("<b>AlphaMissense Mapping</b>", parent)
-        layout.addWidget(title)
-
-        note = QLabel(
-            "Apply AlphaMissense scores to one selected chain, or to all "
-            "protein chains in one structure. AlphaMissense data is only "
-            "available for human proteins.",
-            parent,
-        )
-        note.setWordWrap(True)
-        layout.addWidget(note)
-
-        self._selection_label = QLabel(parent)
-        self._selection_label.setWordWrap(True)
-        self._selection_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        layout.addWidget(self._selection_label)
-
-        auto_title = QLabel("<b>Automatic mapping</b>", parent)
-        layout.addWidget(auto_title)
-
-        auto_help = QLabel(
-            "Auto-map missense to every protein chain in the selected or only "
-            "open structure. This only works for human structures when the CIF "
-            "file contains UniProt IDs for the chains. If several structures are "
-            "open, select the target structure or set a model id under Advanced.",
-            parent,
-        )
-        auto_help.setWordWrap(True)
-        layout.addWidget(auto_help)
-
-        auto_button = QPushButton("Auto-map missense to all chains", parent)
-        auto_button.setToolTip(
-            "Read chain UniProt IDs from CIF metadata and map AlphaMissense to "
-            "all protein chains. The manual UniProt override is ignored."
-        )
-        auto_button.clicked.connect(self._auto_map_missense_to_all_chains)
-        layout.addWidget(auto_button)
-
-        display_title = QLabel("<b>Display options</b>", parent)
-        layout.addWidget(display_title)
-
-        self._label_checkbox = QCheckBox("Add residue labels", parent)
-        layout.addWidget(self._label_checkbox)
-
-        self._color_key_checkbox = QCheckBox("Show AlphaMissense color key", parent)
-        self._color_key_checkbox.setChecked(True)
-        self._color_key_checkbox.setToolTip(
-            "Show a ChimeraX color key for the blue-red AlphaMissense score "
-            "scale, where 0 is blue and 1 is red."
-        )
-        layout.addWidget(self._color_key_checkbox)
-
-        color_form = QWidget(parent)
-        color_layout = QGridLayout(color_form)
-        color_layout.setContentsMargins(0, 0, 0, 0)
-        color_layout.setHorizontalSpacing(8)
-        color_layout.setVerticalSpacing(6)
-        layout.addWidget(color_form)
-
-        color_layout.addWidget(QLabel("<b>Color range</b>", color_form), 0, 0, 1, 2)
-        range_note = QLabel(
-            "Adjusts the blue-red score range. Updating recolors mapped residues "
-            "without fetching AlphaMissense scores again.",
-            color_form,
-        )
-        range_note.setWordWrap(True)
-        color_layout.addWidget(range_note, 1, 0, 1, 3)
-
-        color_layout.addWidget(QLabel("Blue at", color_form), 2, 0)
-        self._range_min_spin = QDoubleSpinBox(color_form)
-        self._range_min_spin.setRange(0.0, 1.0)
-        self._range_min_spin.setSingleStep(0.05)
-        self._range_min_spin.setDecimals(2)
-        self._range_min_spin.setValue(0.0)
-        self._range_min_spin.setToolTip("AlphaMissense score mapped to blue.")
-        color_layout.addWidget(self._range_min_spin, 2, 1)
-
-        color_layout.addWidget(QLabel("Red at", color_form), 3, 0)
-        self._range_max_spin = QDoubleSpinBox(color_form)
-        self._range_max_spin.setRange(0.0, 1.0)
-        self._range_max_spin.setSingleStep(0.05)
-        self._range_max_spin.setDecimals(2)
-        self._range_max_spin.setValue(1.0)
-        self._range_max_spin.setToolTip("AlphaMissense score mapped to red.")
-        color_layout.addWidget(self._range_max_spin, 3, 1)
-
-        recolor_button = QPushButton("Update Color Range", color_form)
-        recolor_button.setToolTip(
-            "Recolor the last mapped AlphaMissense chains using the current range."
-        )
-        recolor_button.clicked.connect(self._update_color_range)
-        color_layout.addWidget(recolor_button, 2, 2, 2, 1)
-
-        self._advanced_toggle = QToolButton(parent)
-        self._advanced_toggle.setText("Advanced custom chain mapping")
-        self._advanced_toggle.setCheckable(True)
-        self._advanced_toggle.setChecked(False)
-        self._advanced_toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self._advanced_toggle.setArrowType(Qt.RightArrow)
-        self._advanced_toggle.toggled.connect(self._set_advanced_visible)
-        layout.addWidget(self._advanced_toggle)
-
-        self._advanced_widget = QWidget(parent)
-        advanced_layout = QVBoxLayout(self._advanced_widget)
-        advanced_layout.setContentsMargins(12, 0, 0, 0)
-        advanced_layout.setSpacing(8)
-        self._advanced_widget.setVisible(False)
-        layout.addWidget(self._advanced_widget)
-
-        advanced_help = QLabel(
-            "Use these controls when you need to target one chain, choose a "
-            "specific model id, or override missing CIF UniProt metadata. For "
-            "manual chain mapping, model id and chain id must both be set, or "
-            "both left blank to use exactly one selected chain. The UniProt "
-            "override must be a human UniProt accession or entry name.",
-            self._advanced_widget,
-        )
-        advanced_help.setWordWrap(True)
-        advanced_layout.addWidget(advanced_help)
-
-        target_form = QWidget(self._advanced_widget)
-        target_layout = QGridLayout(target_form)
-        target_layout.setContentsMargins(0, 0, 0, 0)
-        target_layout.setHorizontalSpacing(8)
-        target_layout.setVerticalSpacing(8)
-        advanced_layout.addWidget(target_form)
-
-        target_layout.addWidget(QLabel("Model id", target_form), 0, 0)
-        self._model_id_entry = QLineEdit(target_form)
-        self._model_id_entry.setPlaceholderText("Example: 1")
-        target_layout.addWidget(self._model_id_entry, 0, 1)
-
-        target_layout.addWidget(QLabel("Chain id", target_form), 1, 0)
-        self._chain_id_entry = QLineEdit(target_form)
-        self._chain_id_entry.setPlaceholderText("Example: A")
-        target_layout.addWidget(self._chain_id_entry, 1, 1)
-
-        self._uniprot_entry = QLineEdit(self._advanced_widget)
-        self._uniprot_entry.setPlaceholderText(
-            "Optional override: human UniProt accession or entry name"
-        )
-        advanced_layout.addWidget(self._uniprot_entry)
-
-        button_row = QHBoxLayout()
-        advanced_layout.addLayout(button_row)
-
-        apply_all_button = QPushButton(
-            "Map missense to all chains", self._advanced_widget
-        )
-        apply_all_button.setToolTip(
-            "Uses the model id and optional UniProt override fields. The chain id "
-            "field is ignored."
-        )
-        apply_all_button.clicked.connect(self._apply_mapping_to_all_chains)
-        button_row.addWidget(apply_all_button)
-
-        refresh_button = QPushButton("Refresh Selection", self._advanced_widget)
-        refresh_button.clicked.connect(self._refresh_selection)
-        button_row.addWidget(refresh_button)
-
-        fill_button = QPushButton("Use Selected Chain", self._advanced_widget)
-        fill_button.clicked.connect(self._fill_from_selection)
-        button_row.addWidget(fill_button)
-
-        apply_button = QPushButton("Apply to Selected Chain", self._advanced_widget)
-        apply_button.clicked.connect(self._apply_mapping)
-        button_row.addWidget(apply_button)
-
-        self._result_label = QLabel(parent)
-        self._result_label.setWordWrap(True)
-        self._result_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        layout.addWidget(self._result_label)
-
-        layout.addStretch(1)
-
-        self._refresh_selection()
-        tw.manage(placement="side")
+        from .ui import build_missense
+        build_missense(self)
 
     @classmethod
     def get_singleton(cls, session, create=True, display=False):
-        from chimerax.core import tools
-
-        return tools.get_singleton(
-            session, cls, "AF Missense Mapping", create=create, display=display
-        )
+        workspace = AFPredictionLauncher.get_singleton(session, create=create)
+        if workspace is None:
+            return None
+        if not create and workspace._missense is None:
+            return None
+        workspace._page_changed(3)
+        if display:
+            workspace.show_page(3)
+        return workspace._missense
 
     def _refresh_selection(self):
-        self._selection_label.setText(selected_chain_summary(self.session))
+        summary = selected_chain_summary(self.session)
+        if not selected_chain_target(self.session)["chain_id"]:
+            self._selection_label.setText("Select a target structure, or use the only open one.")
+        else:
+            self._selection_label.setText(summary)
+        self._selection_label.setToolTip(summary)
 
     def _fill_from_selection(self):
         target = selected_chain_target(self.session)

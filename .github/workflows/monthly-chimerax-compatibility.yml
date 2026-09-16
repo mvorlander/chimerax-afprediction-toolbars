@@ -30,11 +30,15 @@ jobs:
             --known-file .github/chimerax_compatibility.json \
             --github-output
 
+      - name: Install test dependencies
+        run: python -m pip install numpy
+
       - name: Run source compatibility smoke tests
         run: |
-          python -m py_compile src/tool.py src/workflow.py src/missense.py install_chimerax_bundle.py tests/smoke_test_discovery.py tests/smoke_test_missense.py
+          python -m compileall -q src tests install_chimerax_bundle.py
           python tests/smoke_test_discovery.py
           python tests/smoke_test_missense.py
+          python tests/smoke_test_performance.py
 
       - name: Report current status
         run: |

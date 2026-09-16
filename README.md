@@ -2,7 +2,31 @@
 
 This bundle facilitates the analysis of AlphaFold and AlphaFold-Multimer predictions by processing input folders and automatically associating PAE plots with predicted structures. Selection via numeric cutoffs on PAE or pLDDT values helps focus inspection on confident model regions, predicted interfaces, and lower-confidence regions that need care.
 
-![Annotated ChimeraX AF toolbar workflow](screenshots/Annotated_screenshot-01.png)
+## Compact AF workspace (1.4)
+
+All toolbar actions share one dockable **AF Workspace**. Switch between **Open**,
+**Inspect**, **Screen**, and **Missense** without spawning extra control windows.
+The PAE plot opens in a separate window by default for side-by-side inspection.
+Toolbar shortcuts select the relevant page and mode; use **Browse…** to choose a
+folder. Closing the workspace hides it, so reopening it keeps your loaded runs.
+
+The interface uses the ChimeraX font and palette, short labels, tooltips, and
+collapsible advanced controls. Long names do not widen the dock. Forms scroll
+vertically on small screens; the GUI regression test checks a 320 × 480 logical
+pixel window with loaded predictions and long names.
+
+In **Inspect**, model navigation stays above three views: **Select** for confidence
+filters, **PAE** for plot placement and the embedded matrix, and **Save** for exports. The
+**•••** menu contains reset, copy output path, and close run actions. PAE selection,
+chain dividers, coloring, and image export remain available; right-click the
+matrix for plot options. Use **Move to tab** in the plot window (or the PAE tab)
+to embed it, and **Open window** to detach it again. This moves the same plot,
+preserving its matrix and highlights. The placement choice applies to all runs
+in the current workspace. Closing a separate PAE window hides it; **Show window**
+in the PAE tab brings it back.
+
+![Compact prediction selection](screenshots/workspace-select.png)
+
 
 ## Demo
 
@@ -23,7 +47,7 @@ Use one install method only.
    wheel:
 
 ```text
-toolshed install /path/to/chimerax_afpredictiontoolbars-1.3.30-py3-none-any.whl
+toolshed install /path/to/chimerax_afpredictiontoolbars-1.4.1-py3-none-any.whl
 ```
 
 4. Restart ChimeraX.
@@ -58,7 +82,7 @@ This bundle adds a small `AF` toolbar tab to ChimeraX with eight actions:
 - `HT-ColabFold Top Rank`: opens only rank 1 for one numeric hit id from an
   HT-ColabFold screen directory.
 - `HT-ColabFold Picker`: regenerates a clickable PEAK/IPTM screen plot from
-  `IPTM_vs_PTM.txt` and opens clicked hits in the AF Model/PAE Slider.
+  `IPTM_vs_PTM.txt` and opens clicked hits in **Inspect**.
 - `Missense`: maps AlphaMissense scores onto one selected protein chain, or
   onto all protein chains in one structure, using UniProt IDs from mmCIF
   metadata when available.
@@ -68,12 +92,12 @@ scripts and does not contain machine-specific paths.
 
 ## AF2/AF3/HT-ColabFold Workflow
 
-![AF display controller](screenshots/Annotated_screenshot-02.png)
-AF2, AF3, and HT-ColabFold screen-hit runs open a dedicated `AF Model/PAE
-Slider` controller. The controller has a prediction-run drop-down and a pair
-slider. The drop-down chooses which folder/run is active, and the slider
-switches the displayed structure and the displayed PAE matrix together. Each run
-uses one PAE plot tool and updates the plot data when the slider changes.
+AF2, AF3, and HT-ColabFold runs open the **Inspect** page. The run menu selects
+which prediction folder is active. The model menu, slider, and previous/next
+buttons switch the displayed structure and PAE matrix together. Each run reuses
+one PAE plot, shown separately by default or embedded on demand. Only the active
+run's separate plot is visible. Enable **Overlay models**
+to show all structures from the active run while keeping the selected model's PAE.
 
 For AF3 all-hit runs, the bundle displays metadata-based confidence scores in
 the model selector when ranking metadata is available. Models with confidence
@@ -82,76 +106,55 @@ scores are ordered from highest to lowest score in the slider.
 When several models are opened from one prediction run, the bundle aligns them
 to the first opened model and adds them to one ChimeraX model group in the
 Models panel. Starting another AF2/AF3 run keeps the earlier run loaded; use the
-controller drop-down to switch which run's models and PAEs are displayed.
+run menu to switch which run's models and PAEs are displayed.
 
 ## Confidence-Based Selection
 
-The controller includes a `Selection by prediction confidence` section.
-Use the `Selection mode` switch to choose either PAE or pLDDT; PAE is the
-default. For multimer contacts, choose `All inter-chain pairs` or a specific
-`PAE chain pair`, then use the `PAE cutoff` slider to find residues by their
-minimum PAE to the selected partner chain(s). The default threshold is 10, and
-lower values are more stringent. Moving the slider live-selects matching
-residues. The PAE highlights the currently selected residues with a black outline.
-Use `Sync PAE to selection` when you want manual ChimeraX selections, including
-command-line selections, to drive the PAE overlay instead. In this mode, the
-PAE plot highlights the rows and columns corresponding to selected residues in
-the active model. Enable `Only inter-chain PAE` to limit those manual-selection
-overlays to cells where the selected residue is paired with a residue in a
-different chain. Manual-selection overlays use faint row/column stripes for
-context and a stronger block where selected residue ranges intersect in the PAE
-matrix.
+Large predictions use bulk PAE filtering and atom/bond updates. Hidden models do
+not allocate PAE overlay matrices; visible highlights use one image with exact
+cell coverage instead of thousands of graphics objects. Cutoff previews wait for
+a 100 ms pause while dragging, and disabling **Live selection** skips preview
+calculations entirely. Domain colors and contact labels update in batches, and
+missense recoloring uses one color command across the mapped chains while keeping
+each chain's original cartoon-radius scaling. Initial domain clustering and
+contact/interface calculations still use ChimeraX's native algorithms.
 
-For monomeric predictions or local chain-confidence filtering, switch to pLDDT
-mode and use the `pLDDT cutoff` slider. It selects residues with pLDDT at or
-above the cutoff; the default is 70, and higher values are more stringent.
+Open **Inspect → Select** and choose **PAE · Inter-chain** or **pLDDT · Local**.
+Only controls for the active mode are shown.
 
-`Hide Unselected` applies the active confidence filter to every model in the
-current run, and hides non-selected residues. `Show Only` applies the active
-confidence filter to every model in the current run; in PAE mode it also
-refreshes AlphaFold contact side chains, labels, and pseudobonds at the current
-PAE threshold. `Show All` restores a cartoon-only display for every model in
-the current run.
+- **PAE <** selects residues with a minimum PAE below the cutoff to the chosen
+  partner chain(s). The default is 10; lower is more stringent. **All inter-chain
+  pairs** accepts a contact to any other chain, rather than requiring every pair.
+- **pLDDT ≥** selects residues at or above the cutoff (default 70). Higher is more
+  stringent. This works for monomers and individual chains.
+- **Live selection** previews the cutoff in the structure and, for PAE, the matrix.
+- **Selection overlay → Follow structure selection** makes manual ChimeraX
+  selections drive the PAE overlay and disables cutoff live selection. **Inter-chain
+  cells only** restricts that overlay to cells between different chains.
+- **Hide rest**, **Show only**, and **Show all** apply to every model in the active
+  run. Show only also refreshes AF contacts in PAE mode. Show all restores cartoons.
 
-The `PAE chain pair` lets you focus the analysis on specific chains. For
-example, `A-B` highlights residues whose best PAE contact is between chains A
-and B. `All inter-chain pairs` means a residue passes if at least one residue
-in any other chain is below the cutoff; it does not require every chain pair to
-pass. Turn off `Live PAE highlight` to stop live selection and PAE overlays
-while still using the cutoff for `Show Only`. Turning on `Sync PAE to
-selection` disables cutoff live selection so manual selection and cutoff
-previewing do not overwrite each other.
+Expand **Contacts & interfaces** to show AF contacts at the PAE cutoff, toggle
+contact labels, or display interfaces with a buried-area cutoff in Å². These
+controls update the display without writing reports.
 
 ## Analysis Results and Export
 
-Opening a prediction run prepares ChimeraX contact/interface display for every
-model, but does not write contact/interface files to disk. The `Save analysis
-results` section contains `Save Contacts and Interfaces` for writing formatted
-contact and interface reports for the active model to the active run's output
-folder. Saved AlphaFold contact reports use the current `PAE cutoff`, and the
-contacts scope menu chooses either all chain pairs or the currently selected
-`PAE chain pair`. Lower PAE values are more stringent. Interface residues are
-shown as connected residue sticks on top of the cartoon model.
+Opening predictions prepares contact/interface display without saving contact or
+interface reports. In **Inspect → Save**, choose the chain-pair scope and click
+**Save reports** to write contacts and interfaces for the active model at the
+current PAE cutoff.
 
-Use `Show AF contacts at threshold` to refresh the displayed side chains,
-pseudobonds, and labels for the current PAE cutoff without writing files.
-Rerunning this display action removes old AF-contact residue labels before
-labeling the current result.
+**Save PNG** exports the current 3D view with a transparent background. **Save
+session** writes a ChimeraX `.cxs` session. Both use the active output folder;
+set an optional filename suffix and choose whether to include a timestamp.
+**Copy output path** copies that folder. Expand **Run details** for full input and
+output paths, filter settings, and action details. Hover over the status line to
+read the complete last action.
 
-Use `Save PNG` to save the current 3D view as a transparent-background PNG in
-the active run's output folder. Use `Save Session` to save a ChimeraX `.cxs`
-session to the same active output folder. The optional `File suffix` field is
-appended to the filename for the active model/pair, and the `Timestamp` checkbox
-controls whether saved PNG/session filenames include a timestamp.
-`Copy Output Path` copies the active output folder to the clipboard. `Close Run`
-closes the active run's models and PAE plot without disturbing other loaded
-runs. `Reset Active Run` restores the active run to its initial slider/display
-state: first model selected, one model visible, all chain pairs selected, PAE
-mode selected, PAE threshold reset to 10, pLDDT cutoff reset to 70, live PAE
-highlighting enabled, manual PAE selection sync disabled, cartoon-only model
-display, and prepared contact side chains shown. Longer active-run path details
-are kept in the collapsed `Run details` panel to keep the controller compact.
-
+Use **••• → Close run** to close only the active run's models and PAE. **Reset
+display** restores its first model, PAE mode, all chain pairs, cutoffs of 10/70,
+live PAE selection, and initial cartoon/contact display.
 
 ## Expected Input
 
@@ -175,7 +178,7 @@ pdb/job_rank_2_model_1.pdb
 json/job_rank_2_model_1.json
 ```
 
-Use the `Name/filter` field when a folder contains outputs for more than one
+Use the `Filter` field when a folder contains outputs for more than one
 prediction. The bundle refuses ambiguous matches and shows the candidate files so
 the filter can be narrowed.
 
@@ -206,18 +209,18 @@ interactive plot to:
 ```
 
 The plot uses `scaled_PEAKavg` on the x axis and `IPTMavg` on the y axis, with
-dot size reflecting max IPTM. Use the native hit table below the plot to open
-hits: double-click a row or select a row and click `Open Selected Hit`. This
+dot size reflecting max IPTM. Use the **Hits** tab to open
+hits: double-click a row or select a row and click **Open selected hit**. This
 table path is the robust, platform-independent launcher. Plot clicking is
 best-effort only; the generated HTML uses local `#hit-id` anchors so ordinary
 web browsers never try to open a custom ChimeraX URL scheme. Hits opened from
 the picker are marked in green in both the table and regenerated plot. The
 picker can open either all ranks or only the top rank, depending on the
-`Open mode` selector.
+rank selector.
 
 ## Output
 
-When you click `Save Contacts and Interfaces`, generated contact and interface
+When you click **Save reports**, generated contact and interface
 files are written under:
 
 ```text
@@ -229,8 +232,8 @@ kept separately under `raw/af_contacts/` and `raw/interface_residues/`. Contact
 reports record the current PAE threshold used for that save.
 
 Saved PNG and ChimeraX session files are also written to the active mode folder.
-Their filenames include timestamps only when the display controller's
-`Timestamp` checkbox is enabled.
+Their filenames include timestamps only when the **Save** page's
+**Include timestamp** checkbox is enabled.
 
 Every run also writes:
 
@@ -242,7 +245,7 @@ analysis_summary.txt
 These summaries record the bundle version, input folder, active mode, selected
 filter, alignment/contact-chain choice, and opened model/data pairs.
 
-The `Align structures on chain` field is optional. If left blank, the first
+The **Alignment** chain field is optional. If left blank, the first
 chain detected in each opened structure is used for alignment and contact
 analysis.
 
@@ -251,28 +254,28 @@ analysis.
 The missense panel fetches AlphaMissense scores directly for a human UniProt
 accession or entry name, associates them with target chains, colors each chain
 by the average AlphaMissense score, and closes the temporary score set. The
-primary action is `Auto-map missense to all chains`. It reads chain UniProt IDs
+primary action is **Auto-map all chains**. It reads chain UniProt IDs
 from the CIF/mmCIF metadata, maps every protein chain in the selected or only
 open structure, skips chains that cannot be mapped, and reports which chains
 were mapped or skipped. This automatic mode only works for human structures when
 the CIF file contains UniProt IDs for the chains.
 
-Open `Advanced custom chain mapping` only when you need to target one chain,
+Open **Custom mapping** only when you need to target one chain,
 choose a specific model id, or override missing CIF UniProt metadata manually.
-Use `Apply to Selected Chain` for strict one-chain mapping. For manual chain
+Use **Map chain** for strict one-chain mapping. For manual chain
 mapping, set both `Model id` and `Chain id`, or leave both blank and select
-exactly one chain in ChimeraX. `Map missense to all chains` can use a
+exactly one chain in ChimeraX. **Map all chains** can use a
 manual human UniProt accession or entry name as an override for all protein
 chains in the target model.
 
-Enable `Show AlphaMissense color key` to add a ChimeraX color key for the
-blue-red AlphaMissense score scale. Use the `Blue at` and `Red at` color range
+Enable **Show color key** to add a ChimeraX color key for the
+blue-red AlphaMissense score scale. Use the **Blue** and **Red** color range
 controls to adjust which score values define the ends of the scale. After a
-mapping has been applied, `Update Color Range` recolors the last mapped chain(s)
+mapping has been applied, **Update colors** recolors the last mapped chain(s)
 from the stored residue attribute without fetching or recomputing AlphaMissense
 scores again.
 
-![AlphaMissense mapping panel](screenshots/Missense_GUI.png)
+![Compact missense mapping](screenshots/workspace-missense.png)
 
 ![AlphaMissense score coloring in ChimeraX](screenshots/Missense_display.png)
 

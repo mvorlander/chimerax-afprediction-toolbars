@@ -192,8 +192,8 @@ _entity_poly.pdbx_strand_id
     if any("/A,/B" in command or "/DX,/L1" in command for command in commands_run):
         raise AssertionError(f"recolor should not comma-join chain specs: {commands_run!r}")
     color_commands = [command for command in commands_run if command.startswith("color ")]
-    if len(color_commands) != 4:
-        raise AssertionError(f"expected one color command per chain: {commands_run!r}")
+    if len(color_commands) != 1 or color_commands[0].count(" | ") != 3:
+        raise AssertionError(f"expected one color command with four chain targets: {commands_run!r}")
     if any("mutation" in command.lower() for command in commands_run):
         raise AssertionError(f"recolor should not touch mutation-score data: {commands_run!r}")
 

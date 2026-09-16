@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.1
+
+- Replaced separate launcher, controller, screen-picker, and missense windows
+  with one compact AF Workspace. Short labels, scrollable forms, and collapsible
+  options keep controls usable at 320 × 480 logical pixels.
+- PAE opens in a separate window by default. Move to tab / Open window switches
+  placement without replacing the plot or losing its highlights.
+- Replaced Python PAE cell loops with blockwise array filtering and a single
+  raster overlay; hidden models skip overlay allocation. Cutoff previews debounce
+  for 100 ms and stop computing when live selection is disabled.
+- Batched residue/bond display updates, domain colors, contact labels, and
+  AlphaMissense recoloring. Contact preparation colors only the current model.
+- Added array equivalence, native performance, and GUI regression tests; verified
+  display/color equivalence and plot lifecycle in ChimeraX 1.10.1 and 1.11.1.
+
 ## 1.3.30
 
 - Fixed AlphaMissense mapping on ChimeraX versions whose

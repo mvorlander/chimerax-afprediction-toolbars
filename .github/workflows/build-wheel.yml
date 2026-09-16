@@ -25,11 +25,15 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Install test dependencies
+        run: python -m pip install numpy
+
       - name: Run smoke tests
         run: |
           python -m compileall src tests
           python tests/smoke_test_discovery.py
           python tests/smoke_test_missense.py
+          python tests/smoke_test_performance.py
 
       - name: Build wheel
         run: |
