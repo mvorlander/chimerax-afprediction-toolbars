@@ -1,3 +1,19 @@
+# Archived — development moved to Plaschka lab
+
+This repository is a read-only historical copy. All development, issues, and new
+releases are maintained at:
+
+**[plaschka-lab/chimerax-afprediction-toolbars](https://github.com/plaschka-lab/chimerax-afprediction-toolbars)**
+
+**[Download the latest maintained release](https://github.com/plaschka-lab/chimerax-afprediction-toolbars/releases/latest)**
+
+The history and old downloads here remain available. This copy is not kept in
+sync; use the lab repository for all future work.
+
+---
+
+The documentation below describes the archived version.
+
 # ChimeraX AF Prediction Analysis Toolbars
 
 This bundle facilitates the analysis of AlphaFold and AlphaFold-Multimer predictions by processing input folders and automatically associating PAE plots with predicted structures. Selection via numeric cutoffs on PAE or pLDDT values helps focus inspection on confident model regions, predicted interfaces, and lower-confidence regions that need care.
